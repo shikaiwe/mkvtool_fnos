@@ -31,4 +31,10 @@ FNPACK="${FNPACK:-fnpack}"
 command -v "$FNPACK" >/dev/null 2>&1 || FNPACK="$ROOT/tools/fnpack"
 echo "==> fnpack build ($FNPACK)"
 "$FNPACK" build
+
+# fnpack(Windows 版)会把 manifest 重写成 CRLF,fnOS 解析时值带 \r,
+# 安装报「应用包不符合系统要求」;Linux 构建无此问题,脚本自会跳过。
+echo '==> 规范化 fpk 内文本行尾 (CRLF -> LF)'
+bash scripts/fix-fpk-crlf.sh mkvtoolnix.fpk
+
 echo '构建完成。'

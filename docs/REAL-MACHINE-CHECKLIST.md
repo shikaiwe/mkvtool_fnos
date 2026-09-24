@@ -12,6 +12,11 @@
 - [ ] 应用中心「手动安装」选择 `mkvtoolnix.fpk`，向导出现「欢迎使用 MKVToolNix」且提示授权目录。
 - [ ] 安装完成后应用中心卡片出现 MKVToolNix，且有启动/停止控制（`ctl_stop=true`）。
 
+> 若安装报「应用包不符合系统要求」：先确认 fpk 内 manifest 是 LF 行尾。fnpack 的
+> Windows 版会把 manifest 重写成 CRLF，fnOS 解析出的值带 `\r`，架构/版本比对全部
+> 失配即报此错。`scripts/build.sh` / `build.ps1` 已自动执行 `scripts/fix-fpk-crlf.sh`
+> 修复；手工 `fnpack build` 后需单独跑一次该脚本。
+
 ## 2. 服务与入口
 
 - [ ] 桌面出现 MKVToolNix 图标，点击能在 fnOS 窗口内打开界面（统一网关 `/app/mkvtoolnix`）。

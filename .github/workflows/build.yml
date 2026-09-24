@@ -48,6 +48,11 @@ jobs:
       - name: Pack fpk
         run: ./tools/fnpack build
 
+      # Linux 版 fnpack 写的是 LF,此步通常为空操作;兜底防 fnpack 行为变化
+      # (Windows 版会把 manifest 重写成 CRLF,导致 fnOS 报「应用包不符合系统要求」)
+      - name: Normalize fpk line endings
+        run: bash scripts/fix-fpk-crlf.sh mkvtoolnix.fpk
+
       - name: Upload artifact (Actions 页可下载)
         uses: actions/upload-artifact@v4
         with:

@@ -54,6 +54,17 @@ try {
     Write-Host "==> fnpack build ($Fnpack)"
     & $Fnpack build
     if ($LASTEXITCODE -ne 0) { throw 'fnpack build failed' }
+
+    # fnpack(Windows 版)会把 manifest 重写成 CRLF,fnOS 解析时值带 \r,
+    # 安装报「应用包不符合系统要求」。需要 Git Bash 里的 bash 执行修复脚本。
+    Write-Host '==> normalize fpk text line endings (CRLF -> LF)'
+    $bash = Get-Command bash.exe -ErrorAction SilentlyContinue
+    if ($bash) {
+        & $bash.Source (Join-Path $PSScriptRoot 'fix-fpk-crlf.sh') 'mkvtoolnix.fpk'
+        if ($LASTEXITCODE -ne 0) { throw 'fix-fpk-crlf failed' }
+    } else {
+        Write-Warning 'bash not found; run scripts/fix-fpk-crlf.sh manually in Git Bash before installing the fpk.'
+    }
     Write-Host 'build done.'
 } finally {
     Pop-Location
