@@ -19,11 +19,21 @@ if [ ! -f "$APPIMAGE" ]; then
 fi
 chmod +x "$APPIMAGE"
 
-# 官方自解压（无需 FUSE）
-EXTRACT="$TOOLS/appimage-extract"
-rm -rf "$EXTRACT"
+# 官方自解压（无需 FUSE）：产物固定落在执行目录下的 squashfs-root/
+rm -rf "$TOOLS/squashfs-root"
 (cd "$TOOLS" && "./$(basename "$APPIMAGE")" --appimage-extract >/dev/null)
-USR="$EXTRACT/squashfs-root/usr"
+# 兼容不同解包布局：--appimage-extract 产出 squashfs-root/，部分工具会再多包一层目录
+USR=""
+for candidate in "$TOOLS/squashfs-root/usr" "$TOOLS/appimage-extract/squashfs-root/usr"; do
+  if [ -d "$candidate" ]; then
+    USR="$candidate"
+    break
+  fi
+done
+if [ -z "$USR" ]; then
+  USR="$(find "$TOOLS" -maxdepth 4 -type d -path '*/usr' -path '*squashfs-root*' 2>/dev/null | head -n 1)"
+fi
+[ -n "$USR" ] || { echo "AppImage 解包失败：未找到 squashfs-root/usr"; exit 1; }
 
 for name in mkvmerge mkvinfo mkvextract mkvpropedit; do
   found="$(find "$USR/bin" -maxdepth 1 -name "$name*" | head -n 1)"

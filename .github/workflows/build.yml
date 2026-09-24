@@ -35,6 +35,7 @@ jobs:
 
       - name: Install fnpack
         run: |
+          mkdir -p tools
           curl -fsSL --retry 3 -o tools/fnpack \
             https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64
           chmod +x tools/fnpack
