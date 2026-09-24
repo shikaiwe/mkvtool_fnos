@@ -3,7 +3,12 @@ name: Build FPK
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
+
+# 创建 Release 需要 contents: write 权限
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -43,8 +48,26 @@ jobs:
       - name: Pack fpk
         run: ./tools/fnpack build
 
-      - name: Upload artifact
+      - name: Upload artifact (Actions 页可下载)
         uses: actions/upload-artifact@v4
         with:
           name: mkvtoolnix-fpk
           path: mkvtoolnix.fpk
+
+      - name: Release (仅打 v* 标签时，发布到 Releases)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            mkvtoolnix.fpk
+            THIRD-PARTY-LICENSES.md
+          body: |
+            MKVToolNix for fnOS（${{ github.ref_name }}）
+
+            安装：fnOS 应用中心「手动安装」导入 mkvtoolnix.fpk（需安装 nodejs_v22 运行时），
+            安装后在 应用设置 → 文件访问授权 中勾选媒体目录。
+
+            合规说明：包内包含未修改的 MKVToolNix 官方二进制（GPL-2.0，
+            捆绑的 libebml/libmatroska 为 LGPL）。许可文本见包内 licenses/ 目录与
+            THIRD-PARTY-LICENSES.md，源码获取：https://mkvtoolnix.download/source.html
+          generate_release_notes: true
