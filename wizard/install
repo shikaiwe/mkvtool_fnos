@@ -1,0 +1,15 @@
+[
+  {
+    "stepTitle": "欢迎使用 MKVToolNix",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "本应用在 fnOS 桌面中提供 MKVToolNix 的 Web 界面（混流 / 信息 / 提取 / 属性编辑 / 章节编辑）。"
+      },
+      {
+        "type": "tips",
+        "helpText": "重要：安装完成后，请进入 系统设置 → 应用 → MKVToolNix → 文件访问授权，勾选你的媒体文件所在目录，否则文件浏览器将看不到任何媒体文件。"
+      }
+    ]
+  }
+]

@@ -1,0 +1,8 @@
+#!/bin/bash
+# 升级前执行：如应用仍在运行则先停止，避免旧进程持有 app.sock。
+set -u
+MAIN="$(dirname "$0")/main"
+if [ -x "$MAIN" ]; then
+  "$MAIN" stop >/dev/null 2>&1
+fi
+exit 0

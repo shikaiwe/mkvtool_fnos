@@ -1,0 +1,8 @@
+#!/bin/bash
+# 卸载前执行：尽力停止服务进程并清理运行痕迹。任务数据保留在 TRIM_PKGVAR，不在此删除。
+set -u
+MAIN="$(dirname "$0")/main"
+if [ -x "$MAIN" ]; then
+  "$MAIN" stop >/dev/null 2>&1
+fi
+exit 0

@@ -1,0 +1,71 @@
+#!/bin/bash
+# MKVToolNix Web —— 应用服务控制脚本
+# 约定：start 后台拉起 Node 服务；status 用返回码表达状态（0=运行中，3=未运行）；stop 优雅退出后强杀。
+set -u
+
+APP_DIR="${TRIM_APPDEST:-/var/apps/mkvtoolnix/target}"
+SERVER_ENTRY="${APP_DIR}/server/index.mjs"
+PID_FILE="${TRIM_PKGVAR:-/var/apps/mkvtoolnix/var}/app.pid"
+LOG_FILE="${TRIM_PKGVAR:-/var/apps/mkvtoolnix/var}/app.log"
+SOCKET_FILE="${APP_DIR}/app.sock"
+
+# 官方 nodejs_v22 运行时（manifest install_dep_apps 声明的依赖）
+if [ -x /var/apps/nodejs_v22/target/bin/node ]; then
+  export PATH=/var/apps/nodejs_v22/target/bin:$PATH
+fi
+
+is_running() {
+  [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null
+}
+
+case "${1:-}" in
+  start)
+    if is_running; then
+      exit 0
+    fi
+    if [ ! -f "$SERVER_ENTRY" ]; then
+      echo "server entry missing: $SERVER_ENTRY" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
+      exit 1
+    fi
+    if ! command -v node >/dev/null 2>&1; then
+      echo "node runtime not found (install_dep_apps=nodejs_v22)" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
+      exit 1
+    fi
+    mkdir -p "${TRIM_PKGVAR:-/var/apps/mkvtoolnix/var}" "${TRIM_PKGETC:-/var/apps/mkvtoolnix/etc}"
+    chmod +x "${APP_DIR}"/bin/* 2>/dev/null
+    rm -f "$SOCKET_FILE"
+    nohup node "$SERVER_ENTRY" >> "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+    exit 0
+    ;;
+
+  status)
+    if is_running; then
+      exit 0
+    fi
+    rm -f "$PID_FILE"
+    exit 3
+    ;;
+
+  stop)
+    if [ -f "$PID_FILE" ]; then
+      PID="$(cat "$PID_FILE" 2>/dev/null)"
+      if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+        kill "$PID" 2>/dev/null
+        for _ in $(seq 1 20); do
+          kill -0 "$PID" 2>/dev/null || break
+          sleep 0.5
+        done
+        kill -9 "$PID" 2>/dev/null
+      fi
+      rm -f "$PID_FILE"
+    fi
+    rm -f "$SOCKET_FILE"
+    exit 0
+    ;;
+
+  *)
+    echo "usage: $0 {start|stop|status}" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
+    exit 1
+    ;;
+esac

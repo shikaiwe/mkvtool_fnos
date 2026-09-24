@@ -1,0 +1,5 @@
+# 统一 LF，保证 shell 脚本在 fnOS（Linux）上可用
+* text=auto eol=lf
+*.png binary
+*.fpk binary
+*.ico binary

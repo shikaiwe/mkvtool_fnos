@@ -1,0 +1,14 @@
+appname=mkvtoolnix
+version=0.1.0
+display_name=MKVToolNix
+desc=MKVToolNix Web —— 在浏览器中完成 Matroska 混流、信息查看、轨道提取与属性编辑，底层调用官方 mkvtoolnix 命令行工具
+source=thirdparty
+platform=x86
+maintainer=yourname
+maintainer_url=https://github.com/yourname/mkvtoolnix-fnos
+os_min_version=1.1.3100
+desktop_uidir=ui
+desktop_applaunchname=mkvtoolnix.main
+ctl_stop=true
+checkport=false
+install_dep_apps=nodejs_v22

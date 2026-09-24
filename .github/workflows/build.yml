@@ -1,0 +1,49 @@
+name: Build FPK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build frontend
+        run: |
+          npm --prefix web ci || npm --prefix web install --no-audit --no-fund
+          npm --prefix web run build
+          rm -rf app/www && cp -r web/dist app/www
+
+      - name: Prepare backend
+        run: |
+          [ -f server/package-lock.json ] || npm --prefix server install --no-audit --no-fund
+          mkdir -p app/server
+          cp server/package.json server/package-lock.json app/server/
+          cp -r server/lib server/api app/server/
+          cp server/index.mjs app/server/
+          npm --prefix app/server ci --omit=dev --no-audit --no-fund
+
+      - name: Prepare mkvtoolnix binaries
+        run: bash scripts/prepare-binaries.sh
+
+      - name: Install fnpack
+        run: |
+          curl -fsSL --retry 3 -o tools/fnpack \
+            https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64
+          chmod +x tools/fnpack
+
+      - name: Pack fpk
+        run: ./tools/fnpack build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkvtoolnix-fpk
+          path: mkvtoolnix.fpk

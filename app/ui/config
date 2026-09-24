@@ -1,0 +1,14 @@
+{
+  ".url": {
+    "mkvtoolnix.main": {
+      "title": "MKVToolNix",
+      "icon": "images/icon_{0}.png",
+      "type": "iframe",
+      "protocol": "",
+      "gatewayPrefix": "/app/mkvtoolnix",
+      "gatewaySocket": "app.sock",
+      "url": "/app/mkvtoolnix",
+      "allUsers": true
+    }
+  }
+}

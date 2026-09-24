@@ -1,0 +1,27 @@
+# 构建产物与打包输出
+dist/
+*.fpk
+
+# 打包目录中的生成内容（由 scripts/build 生成）
+app/www/
+app/bin/
+app/lib/
+app/licenses/
+app/server/
+
+# 依赖
+node_modules/
+
+# 开发工具（fnpack 等第三方二进制不入库）
+tools/
+
+# 本地开发状态
+.dev/
+
+# ZCode 会话产物
+.zcode/
+
+# 系统杂项
+.DS_Store
+Thumbs.db
+*.log

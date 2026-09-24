@@ -1,0 +1,153 @@
+// REST API 路由。所有路径参数均经过 allowed-roots 校验；任务以白名单工具 + argv 形式提交。
+import fs from 'node:fs'
+import path from 'node:path'
+import { json } from '../lib/httpx.mjs'
+import { env } from '../lib/env.mjs'
+import { getConfig, saveConfig, DEFAULT_CONFIG } from '../lib/config.mjs'
+import { allowedRoots, assertAllowed, listDir, MEDIA_EXTENSIONS } from '../lib/paths.mjs'
+import * as jobs from '../lib/jobs.mjs'
+import { toolStatus, version, identify, run } from '../lib/mkv.mjs'
+import { parseChaptersXml, buildChaptersXml } from '../lib/chapters.mjs'
+
+export function registerRoutes(router) {
+  // ---------- 系统信息 ----------
+  router.add('GET', '/api/system', async ({ res }) => {
+    let mkvVersion = null
+    let mkvError = ''
+    try {
+      mkvVersion = await version()
+    } catch (err) {
+      mkvError = err.message
+    }
+    json(res, 200, {
+      app: { name: env.appName, version: env.appVersion, dev: env.dev },
+      node: process.version,
+      gatewayPrefix: env.gwPrefix,
+      mkv: { version: mkvVersion, error: mkvError, tools: toolStatus() },
+      sys: { version: env.sysVersion, arch: env.sysArch },
+      roots: allowedRoots(),
+    })
+  })
+
+  // ---------- 文件浏览 ----------
+  router.add('GET', '/api/files', async ({ res, query }) => {
+    const p = query.get('path')
+    const filter = query.get('filter') // '' | 'media'
+    if (!p) {
+      return json(res, 200, { path: '', roots: allowedRoots(), entries: [] })
+    }
+    const dir = assertAllowed(p)
+    const st = fs.statSync(dir)
+    if (!st.isDirectory()) throw Object.assign(new Error('not a directory'), { statusCode: 400 })
+    let entries = listDir(dir)
+    if (filter === 'media') {
+      entries = entries.filter(
+        (e) => e.isDir || MEDIA_EXTENSIONS.has(e.name.split('.').pop().toLowerCase())
+      )
+    }
+    const parent = path.dirname(dir)
+    json(res, 200, {
+      path: dir,
+      parent: parent !== dir && allowedRoots().some((r) => dir.startsWith(r.path)) ? parent : '',
+      roots: allowedRoots(),
+      entries,
+    })
+  })
+
+  // ---------- 设置 ----------
+  router.add('GET', '/api/settings', async ({ res }) => {
+    json(res, 200, { ...getConfig(), roots: allowedRoots() })
+  })
+  router.add('PUT', '/api/settings', async ({ res, body }) => {
+    const patch = {}
+    if (body.concurrency !== undefined) {
+      const n = Number(body.concurrency)
+      if (!Number.isInteger(n) || n < 1 || n > 8) {
+        throw Object.assign(new Error('concurrency must be 1-8'), { statusCode: 400 })
+      }
+      patch.concurrency = n
+    }
+    for (const key of ['binDir', 'defaultOutputDir']) {
+      if (body[key] !== undefined) patch[key] = String(body[key]).slice(0, 1024)
+    }
+    if (body.uiLanguage !== undefined) {
+      if (!['zh-CN', 'en-US'].includes(body.uiLanguage)) {
+        throw Object.assign(new Error('unsupported uiLanguage'), { statusCode: 400 })
+      }
+      patch.uiLanguage = body.uiLanguage
+    }
+    json(res, 200, saveConfig(patch))
+  })
+
+  // ---------- 任务 ----------
+  router.add('GET', '/api/jobs', async ({ res }) => {
+    json(res, 200, jobs.list())
+  })
+  router.add('POST', '/api/jobs', async ({ req, res, body }) => {
+    const job = jobs.create({ name: body.name, tool: body.tool, argv: body.argv })
+    json(res, 201, job)
+  })
+  router.add('GET', '/api/jobs/:id', async ({ res, params }) => {
+    const job = jobs.get(params.id)
+    if (!job) throw Object.assign(new Error('job not found'), { statusCode: 404 })
+    json(res, 200, { ...job, log: jobs.readLogTail(job) })
+  })
+  router.add('POST', '/api/jobs/:id/cancel', async ({ res, params }) => {
+    json(res, 200, jobs.cancel(params.id))
+  })
+  router.add('POST', '/api/jobs/:id/retry', async ({ res, params }) => {
+    json(res, 201, jobs.retry(params.id))
+  })
+  router.add('DELETE', '/api/jobs/:id', async ({ res, params }) => {
+    json(res, 200, { removed: jobs.remove(params.id) })
+  })
+
+  // ---------- 识别 / 信息 ----------
+  router.add('POST', '/api/identify', async ({ res, body }) => {
+    const file = assertAllowed(String(body.path || ''))
+    if (!fs.statSync(file).isFile()) throw Object.assign(new Error('not a file'), { statusCode: 400 })
+    json(res, 200, await identify(file))
+  })
+  router.add('POST', '/api/info/raw', async ({ res, body }) => {
+    const file = assertAllowed(String(body.path || ''))
+    const level = Math.max(0, Math.min(4, Number(body.verbose ?? 1)))
+    const { code, stdout, stderr } = await run(
+      'mkvinfo',
+      [...Array(level).fill('-v'), file],
+      { timeoutMs: 120_000 }
+    )
+    json(res, 200, { exitCode: code, output: stdout || stderr })
+  })
+
+  // ---------- 章节 ----------
+  router.add('GET', '/api/chapters', async ({ res, query }) => {
+    const file = assertAllowed(String(query.get('path') || ''))
+    const tmpXml = path.join(env.pkgTmp, `chapters-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.xml`)
+    try {
+      const { code, stderr } = await run('mkvextract', ['chapters', file, tmpXml], { timeoutMs: 60_000 })
+      if (code !== 0 && !fs.existsSync(tmpXml)) {
+        throw new Error(stderr.trim() || `mkvextract chapters exited ${code}`)
+      }
+      const xml = fs.existsSync(tmpXml) ? fs.readFileSync(tmpXml, 'utf8') : ''
+      json(res, 200, { editions: parseChaptersXml(xml), xml })
+    } finally {
+      fs.rmSync(tmpXml, { force: true })
+    }
+  })
+  router.add('POST', '/api/chapters/parse', async ({ res, body }) => {
+    json(res, 200, { editions: parseChaptersXml(String(body.xml || '')) })
+  })
+  // 把编辑好的章节 XML 落到临时目录，供后续任务（mkvpropedit --chapters）引用
+  router.add('PUT', '/api/chapters/temp', async ({ res, body }) => {
+    const xml = buildChaptersXml(body.editions)
+    fs.mkdirSync(env.pkgTmp, { recursive: true })
+    const file = path.join(env.pkgTmp, `chapters-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.xml`)
+    fs.writeFileSync(file, xml)
+    json(res, 200, { file, xml })
+  })
+
+  // ---------- 兼容性占位 ----------
+  router.add('GET', '/api/config-defaults', async ({ res }) => {
+    json(res, 200, DEFAULT_CONFIG)
+  })
+}

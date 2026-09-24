@@ -1,0 +1,7 @@
+#!/bin/bash
+# 升级后执行：文件被重新解包，执行位需要重新补齐；并清理旧套接字。
+set -u
+TARGET="${TRIM_APPDEST:-/var/apps/mkvtoolnix/target}"
+chmod +x "$TARGET"/bin/* 2>/dev/null
+rm -f "$TARGET/app.sock" 2>/dev/null
+exit 0

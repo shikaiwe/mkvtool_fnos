@@ -1,0 +1,9 @@
+#!/bin/bash
+# 配置变更后执行：如服务在运行则重启以应用新配置。
+set -u
+MAIN="$(dirname "$0")/main"
+if [ -x "$MAIN" ] && "$MAIN" status >/dev/null 2>&1; then
+  "$MAIN" stop >/dev/null 2>&1
+  "$MAIN" start >/dev/null 2>&1
+fi
+exit 0
