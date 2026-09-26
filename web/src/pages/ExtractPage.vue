@@ -80,13 +80,13 @@ async function onBrowserSelect(p: string) {
   identifying.value = true
   try {
     ident.value = await api.identify(p)
-    for (const tr of ident.value.tracks) {
+    const base = p.split(/[\\/]/).pop()!.replace(/\.[^.]+$/, '')
+    for (const tr of ident.value?.tracks || []) {
       trackSel.value[tr.id] = false
       tsSel.value[tr.id] = false
-      const base = p.split(/[\\/]/).pop()!.replace(/\.[^.]+$/, '')
       trackOut.value[tr.id] = `${base}.track${tr.id}.${defaultExt(tr.codec, tr.type)}`
     }
-    for (const a of ident.value.attachments || []) attachSel.value[a.id] = false
+    for (const a of ident.value?.attachments || []) attachSel.value[a.id] = false
   } catch (e: any) {
     message.error(e.message)
   } finally {
@@ -100,27 +100,28 @@ function outPath(name: string) {
 
 const argv = computed<string[] | null>(() => {
   if (!src.value || !outDir.value) return null
-  const args: string[] = []
+  // 现行参数序：源文件在最前，其后依次为各模式与提取规格（mkvextract 官方文档用法）
+  const args: string[] = [src.value]
   const tracks = (ident.value?.tracks || []).filter((tr) => trackSel.value[tr.id])
   if (tracks.length) {
-    args.push('tracks', src.value)
+    args.push('tracks')
     for (const tr of tracks) args.push(`${tr.id}:${outPath(trackOut.value[tr.id] || `track${tr.id}.bin`)}`)
   }
   const ts = (ident.value?.tracks || []).filter((tr) => tsSel.value[tr.id])
   if (ts.length) {
-    args.push('timestamps_v2', src.value)
+    args.push('timestamps_v2')
     for (const tr of ts) args.push(`${tr.id}:${outPath(`timestamps_${tr.id}.txt`)}`)
   }
   const atts = (ident.value?.attachments || []).filter((a) => attachSel.value[a.id])
   if (atts.length) {
-    args.push('attachments', src.value)
+    args.push('attachments')
     for (const a of atts) args.push(`${a.id}:${outPath(a.name || `attachment_${a.id}`)}`)
   }
-  if (wantChapters.value) args.push('chapters', ...(chaptersSimple.value ? ['-s'] : []), src.value, outPath('chapters.xml'))
-  if (wantTags.value) args.push('tags', src.value, outPath('tags.xml'))
-  if (wantCuesheet.value) args.push('cuesheet', src.value, outPath('cuesheet.cue'))
-  if (wantCues.value) args.push('cues', src.value, outPath('cues.cue'))
-  return args.length ? args : null
+  if (wantChapters.value) args.push('chapters', ...(chaptersSimple.value ? ['-s'] : []), outPath('chapters.xml'))
+  if (wantTags.value) args.push('tags', outPath('tags.xml'))
+  if (wantCuesheet.value) args.push('cuesheet', outPath('cuesheet.cue'))
+  if (wantCues.value) args.push('cues', outPath('cues.cue'))
+  return args.length > 1 ? args : null
 })
 
 const argvText = computed(() => (argv.value ? ['mkvextract', ...argv.value].join(' ') : ''))
@@ -188,7 +189,7 @@ onMounted(async () => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="tr in ident.tracks" :key="'t' + tr.id">
+              <tr v-for="tr in ident?.tracks" :key="'t' + tr.id">
                 <td><NCheckbox v-model:checked="trackSel[tr.id]" size="small" /></td>
                 <td>{{ tr.id }}</td>
                 <td><NTag size="tiny" :bordered="false">{{ tr.type }}</NTag></td>
@@ -201,7 +202,7 @@ onMounted(async () => {
           </NTable>
         </div>
 
-        <div v-if="(ident.attachments || []).length">
+        <div v-if="(ident?.attachments || []).length">
           <b style="font-size: 13px">{{ $t('extract.attachments') }}</b>
           <NTable size="small" :single-line="false" :bordered="false" style="margin-top: 6px">
             <thead>
@@ -213,7 +214,7 @@ onMounted(async () => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="a in ident.attachments" :key="'a' + a.id">
+              <tr v-for="a in ident?.attachments" :key="'a' + a.id">
                 <td><NCheckbox v-model:checked="attachSel[a.id]" size="small" /></td>
                 <td>{{ a.id }}</td>
                 <td>{{ a.name }}</td>
@@ -235,7 +236,7 @@ onMounted(async () => {
           <b style="font-size: 13px">{{ $t('extract.timestamps') }}</b>
           <NSpace style="margin-top: 6px">
             <NCheckbox
-              v-for="tr in ident.tracks"
+              v-for="tr in ident?.tracks"
               :key="'ts' + tr.id"
               v-model:checked="tsSel[tr.id]"
               size="small"

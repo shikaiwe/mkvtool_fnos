@@ -35,11 +35,15 @@ export function json(res, code, data) {
   res.end(body)
 }
 
-export function apiError(res, err) {
+export function apiError(res, err, req = null) {
   const code = err.statusCode || 500
+  const where = req ? `${req.method} ${req.url}` : ''
   if (code >= 500) {
     console.error('[api]', err)
-    addLog('[api]', err)
+    addLog('error', 'api', `${where} ${code}: ${err.message || String(err)}`, err.stack || '')
+  } else {
+    // 4xx（参数错误/路径越权/不存在等）也留痕，级别 warn，便于排查前端误用与越权尝试
+    addLog('warn', 'api', `${where} ${code}: ${err.message || String(err)}`)
   }
   json(res, code, { error: err.message || String(err) })
 }
@@ -105,7 +109,7 @@ export function createRouter() {
           const body = req.method === 'POST' || req.method === 'PUT' ? await readJson(req) : null
           await r.handler({ req, res, params, body, query: new URL(req.url, 'http://x').searchParams })
         } catch (err) {
-          apiError(res, err)
+          apiError(res, err, req)
         }
         return true
       }

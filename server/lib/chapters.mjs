@@ -90,7 +90,9 @@ export function buildChaptersXml(editions) {
   const list = editions?.length ? editions : [{ name: '', chapters: [] }]
   for (const ed of list) {
     parts.push('  <EditionEntry>')
-    if (ed.name) parts.push(`    <EditionName>${esc(ed.name)}</EditionName>`)
+    // 注意：mkvtoolnix 的章节 XML 格式没有 edition 名称元素（EditionEntry 仅接受
+    // EditionUID/EditionFlag*/ChapterAtom），写入 <EditionName> 会导致整个文件被拒（exit 2）。
+    // edition 名称只存在于应用内部模型，这里不输出。
     for (const ch of ed.chapters || []) {
       parts.push('    <ChapterAtom>')
       parts.push(`      <ChapterTimeStart>${esc(secondsToTimestamp(ch.startSec))}</ChapterTimeStart>`)

@@ -63,7 +63,12 @@ const zh = {
   },
   logs: {
     autoRefresh: '自动刷新',
-    hint: '最近 {n} 行 · 日志文件：{file}',
+    search: '搜索日志…',
+    download: '下载',
+    clear: '清空',
+    clearConfirm: '清空并归档当前日志？（原内容保留为 app.log.1）',
+    cleared: '日志已清空',
+    hint: '显示 {n} 条 · 日志文件：{file}',
     empty: '暂无日志',
   },
   muxer: {
@@ -350,7 +355,12 @@ const en: typeof zh = {
   },
   logs: {
     autoRefresh: 'Auto refresh',
-    hint: 'Last {n} lines · log file: {file}',
+    search: 'Search logs…',
+    download: 'Download',
+    clear: 'Clear',
+    clearConfirm: 'Clear and archive the current log? (previous content is kept as app.log.1)',
+    cleared: 'Log cleared',
+    hint: 'showing {n} entries · log file: {file}',
     empty: 'No logs yet',
   },
   muxer: {

@@ -47,9 +47,9 @@ async function load(p: string) {
   loading.value = true
   try {
     ident.value = await api.identify(p)
-    segTitle.value = ident.value.container.properties.title || ''
-    segDate.value = (ident.value.container.properties.date_added || '').slice(0, 10)
-    tracks.value = ident.value.tracks.map((tr) => ({
+    segTitle.value = ident.value?.container?.properties?.title || ''
+    segDate.value = (ident.value?.container?.properties?.date_added || '').slice(0, 10)
+    tracks.value = (ident.value?.tracks || []).map((tr) => ({
       id: tr.id,
       type: tr.type,
       codec: tr.codec,
@@ -76,8 +76,10 @@ const argv = computed<string[]>(() => {
   if (!src.value) return []
   const args: string[] = []
   const infoSets: string[] = []
-  if (segTitle.value !== (ident.value?.container.properties.title || '')) infoSets.push(`title=${segTitle.value}`)
-  if (segDate.value && segDate.value !== (ident.value?.container.properties.date_added || '').slice(0, 10)) {
+  const identTracks = ident.value?.tracks || []
+  const infoProps = ident.value?.container?.properties || {}
+  if (segTitle.value !== (infoProps.title || '')) infoSets.push(`title=${segTitle.value}`)
+  if (segDate.value && segDate.value !== (infoProps.date_added || '').slice(0, 10)) {
     infoSets.push(`date=${segDate.value}`)
   }
   if (infoSets.length) {
@@ -85,7 +87,7 @@ const argv = computed<string[]>(() => {
     for (const s of infoSets) args.push('--set', s)
   }
   for (const tr of tracks.value) {
-    const orig = ident.value!.tracks.find((x) => x.id === tr.id)!.properties
+    const orig = identTracks.find((x) => x.id === tr.id)?.properties || {}
     const sets: string[] = []
     if (tr.name !== (orig.track_name || '')) sets.push(`name=${tr.name}`)
     if (tr.lang !== (orig.language || 'und')) sets.push(`language=${tr.lang}`)
@@ -93,7 +95,8 @@ const argv = computed<string[]>(() => {
     if (tr.isForced !== !!orig.forced_track) sets.push(`flag-forced=${tr.isForced ? 1 : 0}`)
     if (tr.isCommentary !== !!orig.commentary_track) sets.push(`flag-commentary=${tr.isCommentary ? 1 : 0}`)
     if (sets.length) {
-      args.push('--edit', `track:${tr.id}`)
+      // mkvpropedit 的 track:n 从 1 起编号（官方文档），而 mkvmerge -J 的轨道 id 从 0 起，需 +1 对齐
+      args.push('--edit', `track:${tr.id + 1}`)
       for (const s of sets) args.push('--set', s)
     }
   }

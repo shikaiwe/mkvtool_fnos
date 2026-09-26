@@ -70,6 +70,7 @@ export interface Identification {
 export interface Chapter { start: string; end: string; title: string; language: string; startSec: number | null; endSec: number | null }
 export interface Edition { name: string; chapters: Chapter[] }
 export interface RenameResult { from: string; to: string; ok: boolean; error: string }
+export interface LogEntry { ts: string; level: 'debug' | 'info' | 'warn' | 'error'; scope: string; msg: string; detail?: string }
 export interface SystemInfo {
   app: { name: string; version: string; dev: boolean }
   node: string
@@ -97,7 +98,12 @@ export const api = {
   retryJob: (id: string) => request<Job>('POST', `/api/jobs/${id}/retry`),
   deleteJob: (id: string) => request<{ removed: boolean }>('DELETE', `/api/jobs/${id}`),
   clearFinishedJobs: () => request<{ removed: number }>('POST', '/api/jobs/clear-finished'),
-  logs: (tail = 500) => request<{ lines: string[]; file: string }>(`GET`, `/api/logs?tail=${tail}`),
+  logs: (tail = 1000, level = '', q = '') =>
+    request<{ entries: LogEntry[]; file: string }>(
+      'GET',
+      `/api/logs?tail=${tail}${level ? `&level=${level}` : ''}${q ? `&q=${encodeURIComponent(q)}` : ''}`
+    ),
+  clearLogs: () => request<{ ok: boolean }>('DELETE', '/api/logs'),
   identify: (path: string) => request<Identification>('POST', '/api/identify', { path }),
   detectCharsets: (items: { path: string; hint?: string }[]) =>
     request<{ results: Record<string, string | null> }>('POST', '/api/subtitles/charset', { items }),

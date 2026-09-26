@@ -9,7 +9,7 @@ import * as jobs from '../lib/jobs.mjs'
 import { toolStatus, version, identify, run } from '../lib/mkv.mjs'
 import { parseChaptersXml, buildChaptersXml } from '../lib/chapters.mjs'
 import { detectSubCharset } from '../lib/subcharset.mjs'
-import { readLogs } from '../lib/applog.mjs'
+import { readLogs, readRawLogs, clearLogs, addLog } from '../lib/applog.mjs'
 
 export function registerRoutes(router) {
   // ---------- 系统信息 ----------
@@ -39,7 +39,12 @@ export function registerRoutes(router) {
       return json(res, 200, { path: '', roots: allowedRoots(), entries: [] })
     }
     const dir = assertAllowed(p)
-    const st = fs.statSync(dir)
+    let st
+    try {
+      st = fs.statSync(dir)
+    } catch {
+      throw Object.assign(new Error('path not found'), { statusCode: 404 })
+    }
     if (!st.isDirectory()) throw Object.assign(new Error('not a directory'), { statusCode: 400 })
     let entries = listDir(dir)
     if (filter === 'media') {
@@ -111,28 +116,44 @@ export function registerRoutes(router) {
   // ---------- 识别 / 信息 ----------
   router.add('POST', '/api/identify', async ({ res, body }) => {
     const file = assertAllowed(String(body.path || ''))
-    if (!fs.statSync(file).isFile()) throw Object.assign(new Error('not a file'), { statusCode: 400 })
+    let st
+    try {
+      st = fs.statSync(file)
+    } catch {
+      throw Object.assign(new Error(`file not found: ${file}`), { statusCode: 404 })
+    }
+    if (!st.isFile()) throw Object.assign(new Error('not a file'), { statusCode: 400 })
     json(res, 200, await identify(file))
   })
   router.add('POST', '/api/info/raw', async ({ res, body }) => {
     const file = assertAllowed(String(body.path || ''))
     const level = Math.max(0, Math.min(4, Number(body.verbose ?? 1)))
-    const { code, stdout, stderr } = await run(
+    const { code, signal, stdout, stderr } = await run(
       'mkvinfo',
       [...Array(level).fill('-v'), file],
       { timeoutMs: 120_000 }
     )
-    json(res, 200, { exitCode: code, output: stdout || stderr })
+    if (code !== 0 || signal) {
+      addLog('warn', 'mkv', `mkvinfo exit=${code}${signal ? ` signal=${signal}` : ''} (verbose=${level})`, `file: ${file}\nstderr: ${stderr}`)
+    }
+    json(res, 200, { exitCode: code, output: stdout || stderr || (signal ? `killed by ${signal}` : '') })
   })
 
   // ---------- 章节 ----------
   router.add('GET', '/api/chapters', async ({ res, query }) => {
     const file = assertAllowed(String(query.get('path') || ''))
+    if (!fs.existsSync(file)) {
+      throw Object.assign(new Error(`file not found: ${file}`), { statusCode: 404 })
+    }
+    fs.mkdirSync(env.pkgTmp, { recursive: true })
     const tmpXml = path.join(env.pkgTmp, `chapters-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.xml`)
     try {
-      const { code, stderr } = await run('mkvextract', ['chapters', file, tmpXml], { timeoutMs: 60_000 })
+      // 现行参数序：源文件在前、模式在后（mkvextract 官方文档用法）
+      const { code, signal, stdout, stderr } = await run('mkvextract', [file, 'chapters', tmpXml], { timeoutMs: 60_000 })
       if (code !== 0 && !fs.existsSync(tmpXml)) {
-        throw new Error(stderr.trim() || `mkvextract chapters exited ${code}`)
+        addLog('error', 'mkv', `mkvextract chapters 失败 exit=${code}${signal ? ` signal=${signal}` : ''}`, `file: ${file}\ntmp: ${tmpXml}\nstdout: ${stdout}\nstderr: ${stderr}`)
+        const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join('\n').slice(0, 400)
+        throw new Error(`mkvextract chapters failed (exit ${code}${signal ? ` ${signal}` : ''})${detail ? `: ${detail}` : ''}`)
       }
       const xml = fs.existsSync(tmpXml) ? fs.readFileSync(tmpXml, 'utf8') : ''
       json(res, 200, { editions: parseChaptersXml(xml), xml })
@@ -221,8 +242,27 @@ export function registerRoutes(router) {
 
   // ---------- 运行日志 ----------
   router.add('GET', '/api/logs', async ({ res, query }) => {
-    const tail = Math.max(1, Math.min(2000, Number(query.get('tail')) || 500))
-    json(res, 200, readLogs(tail))
+    const tail = Math.max(1, Math.min(5000, Number(query.get('tail')) || 1000))
+    const level = String(query.get('level') || '')
+    const q = String(query.get('q') || '')
+    json(res, 200, readLogs({ tail, level, q }))
+  })
+  // 原始 JSONL 下载（含已轮转的 app.log.1）
+  router.add('GET', '/api/logs/raw', async ({ req, res }) => {
+    const text = readRawLogs()
+    res.writeHead(200, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Content-Length': Buffer.byteLength(text),
+      'Content-Disposition': 'attachment; filename="app.log"',
+      'X-Content-Type-Options': 'nosniff',
+    })
+    res.end(text)
+  })
+  // 清空：轮转当前日志并重置内存缓冲
+  router.add('DELETE', '/api/logs', async ({ res }) => {
+    clearLogs()
+    addLog('info', 'app', '运行日志已清空（原内容归档为 app.log.1）')
+    json(res, 200, { ok: true })
   })
 
   // ---------- 兼容性占位 ----------

@@ -6,6 +6,7 @@ import { env } from './env.mjs'
 import { getConfig } from './config.mjs'
 import { resolveTool, runLines, TOOLS } from './mkv.mjs'
 import { isAllowed } from './paths.mjs'
+import { addLog } from './applog.mjs'
 
 const JOBS_DIR = path.join(env.pkgVar, 'jobs')
 const QUEUED_STATUSES = new Set(['queued', 'running'])
@@ -42,6 +43,7 @@ export function init() {
         job.status = 'interrupted'
         job.finishedAt = Date.now()
         job.error = 'interrupted by app restart'
+        addLog('error', 'job', `任务中断（应用重启）: ${job.name}`, `id: ${job.id}\ntool: ${job.tool}\nargv: ${job.argv.join(' ')}`)
       }
       jobs.set(job.id, job)
     } catch {
@@ -119,6 +121,7 @@ export function create({ name, tool, argv }) {
     finishedAt: null,
   }
   jobs.set(id, job)
+  addLog('info', 'job', `任务创建: ${job.name}`, `id: ${job.id}\ntool: ${tool}\nargv: ${argv.join(' ')}`)
   emitChange(job)
   pump()
   return job
@@ -148,6 +151,7 @@ function start(job) {
 
   job.status = 'running'
   job.startedAt = Date.now()
+  addLog('info', 'job', `任务开始: ${job.name}`, `id: ${job.id}\n$ ${job.tool} ${args.join(' ')}`)
   appendLog(job, `$ ${job.tool} ${args.join(' ')}`)
   emitChange(job)
 
@@ -161,6 +165,12 @@ function start(job) {
           emitChange(job)
         }
       }
+      // 捕获工具输出的真实错误行（mkvmerge --gui-mode 的 #GUI#error、本地化的 错误:/Error: 前缀），
+      // 让任务列表/失败日志显示具体原因，而不是只有 exit code 2
+      const trimmed = line.trim()
+      if (/^(?:#GUI#error|错误[:：]|Error[:：])/i.test(trimmed)) {
+        job.error = trimmed.slice(0, 300)
+      }
       appendLog(job, line)
       listeners.log.forEach((fn) => fn(job.id, line))
     },
@@ -172,6 +182,8 @@ function start(job) {
     job.status = 'failed'
     job.error = `spawn failed: ${err.message}`
     job.finishedAt = Date.now()
+    addLog('error', 'job', `任务失败: ${job.name} — ${job.error}`, `id: ${job.id}\ntool: ${job.tool}\nargv: ${job.argv.join(' ')}`)
+    appendLog(job, `! ${job.error}`)
     emitChange(job)
     pump()
   })
@@ -180,19 +192,29 @@ function start(job) {
     children.delete(job.id)
     job.exitCode = code
     job.finishedAt = Date.now()
+    const dur = job.startedAt ? Math.round((job.finishedAt - job.startedAt) / 1000) : 0
+    const durText = `${dur}s`
     if (cancelRequested.has(job.id)) {
       cancelRequested.delete(job.id)
       job.status = 'canceled'
+      addLog('warn', 'job', `任务取消: ${job.name}（运行 ${durText}）`, `id: ${job.id}`)
+      appendLog(job, `! canceled`)
     } else if (code === 0) {
       job.status = 'done'
       job.progress = 100
+      addLog('info', 'job', `任务完成: ${job.name}（${durText}）`, `id: ${job.id}`)
     } else if (code === 1) {
-      // mkvmerge：0=成功 1=有警告 2=出错
+      // mkvmerge/mkvextract/mkvpropedit/mkvinfo 均为：0=成功 1=有警告 2=出错
       job.status = 'done'
       job.warning = true
+      addLog('warn', 'job', `任务完成（有警告）: ${job.name}（exit 1，${durText}）`, `id: ${job.id}\n${readLogTail(job, 8)}`)
     } else {
       job.status = 'failed'
-      job.error = signal ? `killed by ${signal}` : `exit code ${code}`
+      // 已从输出捕获到具体错误行时优先展示，并附上退出码
+      const exitText = signal ? `signal ${signal}` : `exit code ${code}`
+      job.error = job.error ? `${job.error} [${exitText}]` : exitText
+      addLog('error', 'job', `任务失败: ${job.name} — ${job.error}（${durText}）`, `id: ${job.id}\n${readLogTail(job, 12)}`)
+      appendLog(job, `! ${job.error}`)
     }
     emitChange(job)
     pump()
@@ -204,6 +226,7 @@ export function cancel(id) {
   if (!job) throw Object.assign(new Error('job not found'), { statusCode: 404 })
   if (job.status !== 'running') return job
   cancelRequested.add(id)
+  addLog('info', 'job', `请求取消任务: ${job.name}`, `id: ${id}`)
   const child = children.get(id)
   if (child) {
     child.kill('SIGTERM')
@@ -230,6 +253,7 @@ export function remove(id) {
     throw Object.assign(new Error('cancel the job before removing'), { statusCode: 400 })
   }
   jobs.delete(id)
+  addLog('debug', 'job', `任务记录已删除: ${job.name}`, `id: ${id}`)
   for (const suffix of ['.job.json', '.log']) {
     fs.rmSync(path.join(JOBS_DIR, id + suffix), { force: true })
   }
@@ -242,6 +266,7 @@ export function clearFinished() {
     .filter((j) => !QUEUED_STATUSES.has(j.status))
     .map((j) => j.id)
   for (const id of ids) remove(id)
+  if (ids.length) addLog('info', 'job', `一键清理已完成任务记录 × ${ids.length}`)
   return ids.length
 }
 

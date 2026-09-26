@@ -25,6 +25,13 @@ function upsert(job: Job) {
   else jobsState.jobs.unshift(job)
 }
 
+// WS 消息分发：页面（如运行日志页）可订阅 applog/log 等事件，共享同一条连接
+const wsListeners = new Set<(msg: any) => void>()
+export function onWsMessage(fn: (msg: any) => void) {
+  wsListeners.add(fn)
+  return () => wsListeners.delete(fn)
+}
+
 let started = false
 export function startJobsSync() {
   if (started) return
@@ -44,6 +51,7 @@ export function startJobsSync() {
       try {
         const msg = JSON.parse(ev.data)
         if (msg.type === 'job') upsert(msg.job)
+        wsListeners.forEach((fn) => fn(msg))
       } catch {
         /* ignore */
       }

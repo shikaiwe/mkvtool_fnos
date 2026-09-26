@@ -11,9 +11,9 @@ import { registerRoutes } from './api/routes.mjs'
 import * as jobs from './lib/jobs.mjs'
 import { addLog } from './lib/applog.mjs'
 
+// stdout 镜像一份（设备 journal 可见），结构化条目入运行日志
 function log(...args) {
   console.log(new Date().toISOString(), ...args)
-  addLog(...args) // 运行日志另行入环形缓冲并落盘，供前端「日志」页查看
 }
 
 // ---------- 路由与静态 ----------
@@ -47,12 +47,13 @@ function handler(req, res) {
       .handle(req, res, pathname)
       .then((handled) => {
         if (!handled) {
+          addLog('warn', 'api', `404 no route: ${req.method} ${pathname}`)
           res.writeHead(404, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: `no route: ${req.method} ${pathname}` }))
         }
       })
       .catch((err) => {
-        log('api error', err)
+        addLog('error', 'api', `router error: ${err.message}`, err.stack || '')
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: err.message }))
@@ -70,6 +71,7 @@ function handler(req, res) {
 
 // ---------- 启动 ----------
 async function main() {
+  addLog('info', 'app', `app start ${env.appName} ${env.appVersion}${env.dev ? ' (dev)' : ''}`, `node: ${process.version}\nwww: ${env.wwwDir}`)
   log('app start', `${env.appName} ${env.appVersion}`, env.dev ? '(dev)' : '')
   for (const dir of [env.pkgVar, env.pkgEtc, env.pkgTmp]) {
     fs.mkdirSync(dir, { recursive: true })
@@ -82,6 +84,7 @@ async function main() {
 
   if (env.dev) {
     server.listen(env.port, '127.0.0.1', () => {
+      addLog('info', 'app', `listening http://127.0.0.1:${env.port} (www: ${env.wwwDir})`)
       log(`[dev] http://127.0.0.1:${env.port}  (www: ${env.wwwDir})`)
     })
   } else {
@@ -93,6 +96,7 @@ async function main() {
       } catch {
         /* 部分文件系统不支持 */
       }
+      addLog('info', 'app', `listening on ${socketPath} (gateway prefix ${env.gwPrefix})`)
       log(`listening on ${socketPath} (gateway prefix ${env.gwPrefix})`)
     })
   }
@@ -100,6 +104,7 @@ async function main() {
   attachWs(server, ['/ws', env.gwPrefix ? env.gwPrefix + '/ws' : '/ws'])
 
   const shutdown = (signal) => {
+    addLog('info', 'app', `received ${signal}, shutting down`)
     log(`received ${signal}, shutting down`)
     jobs.shutdown()
     server.close(() => process.exit(0))
@@ -108,16 +113,16 @@ async function main() {
   process.on('SIGTERM', () => shutdown('SIGTERM'))
   process.on('SIGINT', () => shutdown('SIGINT'))
   process.on('uncaughtException', (err) => {
-    log('uncaughtException', err)
+    addLog('error', 'app', `uncaughtException: ${err.message}`, err.stack || '')
   })
   process.on('unhandledRejection', (err) => {
-    log('unhandledRejection', err)
+    addLog('error', 'app', `unhandledRejection: ${err?.message || err}`, err?.stack || String(err))
   })
 }
 
 main().catch((err) => {
   console.error('fatal:', err)
-  addLog('fatal', err)
+  addLog('error', 'app', `fatal: ${err.message}`, err.stack || '')
   if (env.pkgVar && process.env.TRIM_TEMP_LOGFILE) {
     try {
       fs.appendFileSync(process.env.TRIM_TEMP_LOGFILE, `server fatal: ${err.message}\n`)

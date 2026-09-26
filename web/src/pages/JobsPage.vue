@@ -3,7 +3,7 @@ import { h, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import {
-  NCard, NDataTable, NButton, NTag, NProgress, NSpace, NPopconfirm, NDropdown, useMessage,
+  NCard, NDataTable, NButton, NTag, NProgress, NSpace, NPopconfirm, NDropdown, NTooltip, useMessage,
   type DataTableColumns,
 } from 'naive-ui'
 import { api, fmtTime, type Job } from '../api'
@@ -34,13 +34,19 @@ const columns = ref<DataTableColumns<Job>>([
     title: () => t('jobs.status'),
     key: 'status',
     width: 130,
-    render: (row) =>
-      h(NTag, { type: statusType(row.status), size: 'small' }, {
+    render: (row) => {
+      const tag = h(NTag, { type: statusType(row.status), size: 'small' }, {
         default: () =>
           row.status === 'done' && row.warning
             ? t('jobs.warningDone')
             : t('jobs.st_' + row.status),
-      }),
+      })
+      // 失败/中断的原因（spawn 失败、退出码等）悬停即可见
+      if (row.error && row.status !== 'running') {
+        return h(NTooltip, { style: 'max-width: 420px' }, { trigger: () => tag, default: () => row.error })
+      }
+      return tag
+    },
   },
   {
     title: () => t('jobs.progress'),

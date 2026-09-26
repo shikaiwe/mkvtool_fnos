@@ -112,7 +112,7 @@ function trackPropRows(tr: any): [string, string][] {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="tr in ident.tracks" :key="tr.id">
+            <tr v-for="tr in ident?.tracks" :key="tr.id">
               <td>{{ tr.id }}</td>
               <td><NTag size="tiny" :bordered="false">{{ tr.type }}</NTag></td>
               <td style="font-size: 12px">{{ tr.codec }}</td>
@@ -127,7 +127,7 @@ function trackPropRows(tr: any): [string, string][] {
 
       <NCard :title="$t('info.prop')">
         <NTabs type="line" animated>
-          <NTabPane v-for="tr in ident.tracks" :key="'p' + tr.id" :name="'p' + tr.id" :tab="`#${tr.id} ${tr.type}`">
+          <NTabPane v-for="tr in ident?.tracks" :key="'p' + tr.id" :name="'p' + tr.id" :tab="`#${tr.id} ${tr.type}`">
             <NTable size="small" :single-line="false" :bordered="false">
               <tbody>
                 <tr v-for="[k, v] in trackPropRows(tr)" :key="k">
@@ -137,7 +137,7 @@ function trackPropRows(tr: any): [string, string][] {
               </tbody>
             </NTable>
           </NTabPane>
-          <NTabPane v-if="(ident.attachments || []).length" name="att" :tab="$t('info.attachmentsTab')">
+          <NTabPane v-if="(ident?.attachments || []).length" name="att" :tab="$t('info.attachmentsTab')">
             <NTable size="small" :single-line="false" :bordered="false">
               <thead>
                 <tr>
@@ -147,7 +147,7 @@ function trackPropRows(tr: any): [string, string][] {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="a in ident.attachments" :key="a.id">
+                <tr v-for="a in ident?.attachments" :key="a.id">
                   <td>{{ a.id }}</td>
                   <td>{{ a.name }}</td>
                   <td>{{ fmtSize(a.size) }}</td>
