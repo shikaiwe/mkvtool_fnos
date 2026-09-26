@@ -35,6 +35,7 @@ onMounted(async () => {
 
     <NCard :title="$t('about.links')">
       <ul style="line-height: 2; margin: 0; padding-left: 20px">
+        <li><a href="https://github.com/shikaiwe/mkvtool_fnos" target="_blank" rel="noreferrer">本项目仓库 (GitHub)</a></li>
         <li><a href="https://mkvtoolnix.download/" target="_blank" rel="noreferrer">MKVToolNix 官方网站</a></li>
         <li><a href="https://mkvtoolnix.download/source.html" target="_blank" rel="noreferrer">MKVToolNix 源码（GPL-2.0）</a></li>
         <li><a href="https://gitlab.com/mbunkus/mkvtoolnix" target="_blank" rel="noreferrer">MKVToolNix 仓库 (GitLab)</a></li>

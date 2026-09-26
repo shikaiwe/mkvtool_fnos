@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 字幕改名：扫描视频/字幕目录自动配对（复用批量内封的两轮匹配），把字幕批量改名为
-// 「视频文件名[.语言标记].原扩展名」，改完即可被批量内封与播放器按名识别。
+// 「视频文件名[.语言标记].原扩展名」，或追加固定语言后缀（sc/tc/jpsc 等，取自语言识别列表），
+// 改完即可被批量内封与播放器按名识别。
 // 自动匹配有误时全链路可手动纠正：换绑目标视频、直接改新文件名；未匹配字幕可手动指定视频后一并改名。
 import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -9,7 +10,7 @@ import {
 } from 'naive-ui'
 import { api, type FileEntry, type RenameResult } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
-import { extOf, langTokenOf, pairVideos, pairingKey, SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS } from '../subtitles'
+import { extOf, langTokenOf, pairVideos, pairingKey, LANG_SUFFIX_PRESETS, SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS } from '../subtitles'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -17,6 +18,7 @@ const message = useMessage()
 const videoDir = ref('')
 const subDir = ref('')
 const keepLang = ref(true)
+const addSuffix = ref('') // 非空 = 追加固定语言后缀（与 keepLang 互斥）
 const moveToVideo = ref(false)
 const overwrite = ref(false)
 
@@ -77,8 +79,9 @@ function joinName(dir: string, name: string): string {
   return dir + (dir.includes('\\') ? '\\' : '/') + name
 }
 
-// 新名 = 视频文件名[.语言标记].原扩展名
+// 新名 = 视频文件名[.语言标记|.指定后缀].原扩展名
 function deriveName(videoName: string, subName: string): string {
+  if (addSuffix.value) return baseOf(videoName) + '.' + addSuffix.value + '.' + rawExt(subName)
   const tok = keepLang.value ? langTokenOf(subName) : ''
   return baseOf(videoName) + (tok ? '.' + tok : '') + '.' + rawExt(subName)
 }
@@ -296,6 +299,12 @@ const statusText = (s: RowStatus) =>
 
 const videoOptions = computed(() => videos.value.map((v) => ({ label: v.name, value: v.path })))
 
+// 语言后缀下拉：首项“不添加”+ 识别规则表中的常用后缀
+const suffixOptions = computed(() => [
+  { label: t('srn.suffixNone'), value: '' },
+  ...LANG_SUFFIX_PRESETS.map((p) => ({ label: `${p.suffix}（${p.name}）`, value: p.suffix })),
+])
+
 // ---------- 草稿 ----------
 const DRAFT_KEY = 'mkv.subrename'
 
@@ -306,6 +315,7 @@ onMounted(() => {
       videoDir.value = draft.videoDir || ''
       subDir.value = draft.subDir || ''
       keepLang.value = draft.keepLang !== false
+      addSuffix.value = draft.addSuffix || '' // 与 keepLang 互斥由 watch 收敛，后设的 addSuffix 优先
       moveToVideo.value = !!draft.moveToVideo
       overwrite.value = !!draft.overwrite
     }
@@ -321,21 +331,30 @@ function saveDraft() {
       videoDir: videoDir.value,
       subDir: subDir.value,
       keepLang: keepLang.value,
+      addSuffix: addSuffix.value,
       moveToVideo: moveToVideo.value,
       overwrite: overwrite.value,
     })
   )
 }
-watch([videoDir, subDir, keepLang, moveToVideo, overwrite], saveDraft)
+watch([videoDir, subDir, keepLang, addSuffix, moveToVideo, overwrite], saveDraft)
 
-// 切换"保留语言标记"：重算未手改名字的行
-watch(keepLang, () => {
+// 切换"保留语言标记"/"添加语言后缀"（两者互斥，后选的生效）：重算未手改名字的行
+function recomputeDerivedNames() {
   for (const r of rows.value) {
     if (r.nameEdited || r.status === 'done' || r.status === 'failed') continue
     const ve = videos.value.find((x) => x.path === r.videoPath)
     if (ve) r.newName = deriveName(ve.name, r.sub.name)
   }
   refreshStatuses()
+}
+watch(keepLang, (v) => {
+  if (v && addSuffix.value) addSuffix.value = ''
+  recomputeDerivedNames()
+})
+watch(addSuffix, (v) => {
+  if (v && keepLang.value) keepLang.value = false
+  recomputeDerivedNames()
 })
 // 切换"移动到视频目录"：目标目录变化，重算 same/冲突
 watch(moveToVideo, refreshStatuses)
@@ -371,6 +390,15 @@ watch(moveToVideo, refreshStatuses)
             <NCheckbox v-model:checked="keepLang">{{ $t('srn.keepLang') }}</NCheckbox>
             <NCheckbox v-model:checked="moveToVideo">{{ $t('srn.moveToVideo') }}</NCheckbox>
             <NCheckbox v-model:checked="overwrite">{{ $t('srn.overwrite') }}</NCheckbox>
+            <div class="suffix-picker">
+              <span class="suffix-label">{{ $t('srn.addSuffix') }}</span>
+              <NSelect
+                v-model:value="addSuffix"
+                :options="suffixOptions"
+                size="small"
+                style="width: 220px"
+              />
+            </div>
           </NSpace>
         </NGi>
       </NGrid>
@@ -454,6 +482,14 @@ watch(moveToVideo, refreshStatuses)
   margin-bottom: 4px;
   font-size: 13px;
   opacity: 0.7;
+}
+.suffix-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.suffix-label {
+  font-size: 14px;
 }
 .target-dir {
   margin-top: 4px;

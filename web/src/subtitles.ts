@@ -85,6 +85,25 @@ export function langTokenOf(fileName: string): string {
 // 语言下拉框候选（沿用高级模式的常用语言）
 export const SUB_LANG_PRESETS = ['chi', 'zho', 'eng', 'jpn', 'kor', 'fre', 'ger', 'spa', 'rus', 'tha', 'por', 'ita', 'und']
 
+// 字幕改名“添加语言后缀”候选：取自上面的语言识别规则表，每个后缀都能被 matchLangToken 识别
+//（含 jp+sc 连写组合），改出的文件名可被本工具与播放器按名识别
+export const LANG_SUFFIX_PRESETS: { suffix: string; name: string }[] = [
+  { suffix: 'sc', name: '简体中文' },
+  { suffix: 'tc', name: '繁體中文' },
+  { suffix: 'jpsc', name: '日本語+简体中文' },
+  { suffix: 'jptc', name: '日本語+繁體中文' },
+  { suffix: 'jp', name: '日本語' },
+  { suffix: 'en', name: 'English' },
+  { suffix: 'ko', name: '한국어' },
+  { suffix: 'fr', name: 'Français' },
+  { suffix: 'de', name: 'Deutsch' },
+  { suffix: 'es', name: 'Español' },
+  { suffix: 'pt', name: 'Português' },
+  { suffix: 'it', name: 'Italiano' },
+  { suffix: 'ru', name: 'Русский' },
+  { suffix: 'th', name: 'ไทย' },
+]
+
 // 字符集下拉候选（快速/批量内封共用；后端自动检测仅覆盖 UTF-8 与 GB18030/BIG5/日文系）
 export const SUB_CHARSETS = ['UTF-8', 'GB18030', 'BIG5', 'UTF-16LE', 'UTF-16BE', 'SHIFT_JIS', 'EUC-JP', 'EUC-KR', 'WINDOWS-1252']
 
