@@ -122,6 +122,17 @@ function serveFile(res, file, cacheable) {
   fs.createReadStream(file).pipe(res)
 }
 
+// 网关前缀归一化：入口 URL 无尾斜杠时（ui/config 的 url=/app/<appname>），浏览器会把
+// ./assets 相对路径解析到前缀之外（/app/assets/...），资源 404 后页面只剩黑底，
+// 因此必须 302 补上尾斜杠；其余情形剥掉前缀后放行，无前缀（开发机）原样返回。
+export function normalizeGatewayUrl(url, gwPrefix) {
+  if (!gwPrefix) return { url }
+  if (url === gwPrefix || url.startsWith(gwPrefix + '?')) {
+    return { redirect: gwPrefix + '/' + url.slice(gwPrefix.length) }
+  }
+  return { url: url.startsWith(gwPrefix + '/') ? url.slice(gwPrefix.length) : url }
+}
+
 export function serveStatic(res, pathname, wwwDir) {
   if (!fs.existsSync(path.join(wwwDir, 'index.html'))) {
     res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' })

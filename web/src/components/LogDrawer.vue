@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // 任务日志抽屉：运行中自动刷新
 import { ref, watch, onUnmounted } from 'vue'
-import { NDrawer, NDrawerContent } from 'naive-ui'
+import { NDrawer, NDrawerContent, useThemeVars } from 'naive-ui'
 import { api, type Job } from '../api'
 
 const props = defineProps<{ show: boolean; job: Job | null }>()
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void }>()
+const tv = useThemeVars()
 
 const log = ref('')
 const timer = ref<number | null>(null)
@@ -43,18 +44,18 @@ onUnmounted(() => {
     <NDrawerContent :title="`${job?.name ?? ''} — ${job?.id ?? ''}`" closable>
       <NSpace vertical size="small">
         <pre
-          style="
-            background: rgba(0, 0, 0, 0.35);
-            padding: 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            line-height: 1.5;
-            overflow: auto;
-            max-height: 70vh;
-            white-space: pre-wrap;
-            word-break: break-all;
-            margin: 0;
-          "
+          :style="{
+            background: tv.actionColor,
+            padding: '12px',
+            borderRadius: '6px',
+            fontSize: '12px',
+            lineHeight: '1.5',
+            overflow: 'auto',
+            maxHeight: '70vh',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+            margin: '0'
+          }"
         >{{ log || '…' }}</pre>
       </NSpace>
     </NDrawerContent>

@@ -3,13 +3,14 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NCard, NSpace, NButton, NInput, NTag, NTable, NTabs, NTabPane, NAlert, NSelect, NSpin, useMessage,
+  NCard, NSpace, NButton, NInput, NTag, NTable, NTabs, NTabPane, NAlert, NSelect, NSpin, useMessage, useThemeVars,
 } from 'naive-ui'
 import { api, fmtSize, type Identification } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
 
 const { t } = useI18n()
 const message = useMessage()
+const tv = useThemeVars()
 
 const src = ref('')
 const ident = ref<Identification | null>(null)
@@ -170,7 +171,7 @@ function trackPropRows(tr: any): [string, string][] {
           </NSpace>
           <pre
             v-if="raw"
-            style="background: rgba(0, 0, 0, 0.35); padding: 12px; border-radius: 6px; font-size: 12px; overflow: auto; max-height: 50vh; margin: 0"
+            :style="{ background: tv.actionColor, padding: '12px', borderRadius: '6px', fontSize: '12px', overflow: 'auto', maxHeight: '50vh', margin: '0' }"
           >{{ raw }}</pre>
         </NSpace>
       </NCard>

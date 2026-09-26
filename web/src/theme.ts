@@ -1,12 +1,16 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { darkTheme } from 'naive-ui'
 
 const saved = localStorage.getItem('mkv.theme')
 export const isDark = ref(saved === null ? true : saved === 'dark')
 
-export function toggleTheme() {
-  isDark.value = !isDark.value
-  localStorage.setItem('mkv.theme', isDark.value ? 'dark' : 'light')
+export function setTheme(dark: boolean) {
+  isDark.value = dark
+  localStorage.setItem('mkv.theme', dark ? 'dark' : 'light')
 }
 
-export const naiveTheme = () => (isDark.value ? darkTheme : null)
+export function toggleTheme() {
+  setTheme(!isDark.value)
+}
+
+export const naiveTheme = computed(() => (isDark.value ? darkTheme : null))

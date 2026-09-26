@@ -3,13 +3,14 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NCard, NSpace, NButton, NInput, NInputNumber, NTag, NAlert, NTable, useMessage,
+  NCard, NSpace, NButton, NInput, NInputNumber, NTag, NAlert, NTable, useMessage, useThemeVars,
 } from 'naive-ui'
 import { api, type Edition } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
 
 const { t } = useI18n()
 const message = useMessage()
+const tv = useThemeVars()
 
 const src = ref('')
 const editions = ref<Edition[]>([])
@@ -140,7 +141,7 @@ async function copyPath() {
           <tr>
             <th style="width: 130px">{{ $t('chapters.start') }}</th>
             <th style="width: 130px">{{ $t('chapters.end') }}（{{ $t('chapters.endAuto') }}）</th>
-            <th>{{ $t('chapters.title') }}</th>
+            <th>{{ $t('chapters.chapterTitle') }}</th>
             <th style="width: 90px">{{ $t('chapters.lang') }}</th>
             <th style="width: 120px"></th>
           </tr>
@@ -191,7 +192,7 @@ async function copyPath() {
         <NTag v-if="tempFile" size="small" type="info">{{ tempFile }}</NTag>
         <pre
           v-if="xmlPreview"
-          style="background: rgba(0, 0, 0, 0.35); padding: 12px; border-radius: 6px; font-size: 12px; overflow: auto; max-height: 40vh; margin: 0"
+          :style="{ background: tv.actionColor, padding: '12px', borderRadius: '6px', fontSize: '12px', overflow: 'auto', maxHeight: '40vh', margin: '0' }"
         >{{ xmlPreview }}</pre>
       </NSpace>
     </NCard>

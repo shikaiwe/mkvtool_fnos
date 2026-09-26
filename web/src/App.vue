@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NConfigProvider, NLayout, NLayoutSider, NLayoutContent, NLayoutHeader, NMenu, NSwitch, NIcon, NMessageProvider, NDialogProvider, zhCN, dateZhCN, enUS, dateEnUS } from 'naive-ui'
-import { isDark, naiveTheme } from './theme'
+import { NConfigProvider, NGlobalStyle, NLayout, NLayoutSider, NLayoutContent, NLayoutHeader, NMenu, NSwitch, NIcon, NMessageProvider, NDialogProvider, zhCN, dateZhCN, enUS, dateEnUS } from 'naive-ui'
+import { isDark, naiveTheme, setTheme } from './theme'
 import { i18n, setLocale } from './i18n'
 
 const route = useRoute()
@@ -29,11 +29,12 @@ function onMenuUpdate(key: string) {
 
 <template>
   <NConfigProvider
-    :theme="naiveTheme()"
+    :theme="naiveTheme"
     :locale="isZh ? zhCN : enUS"
     :date-locale="isZh ? dateZhCN : dateEnUS"
     style="height: 100vh"
   >
+    <NGlobalStyle />
     <NLayout position="absolute">
       <NLayoutHeader bordered style="height: 52px; display: flex; align-items: center; padding: 0 20px; gap: 12px">
         <span style="font-weight: 700; font-size: 16px">MKVToolNix</span>
@@ -42,7 +43,7 @@ function onMenuUpdate(key: string) {
         <span style="font-size: 12px; opacity: 0.6">EN / 中</span>
         <NSwitch size="small" :value="isZh" @update:value="(v: boolean) => setLocale(v ? 'zh-CN' : 'en-US')" />
         <span style="font-size: 12px; opacity: 0.6; margin-left: 8px">🌙</span>
-        <NSwitch size="small" :value="isDark" @update:value="() => toggleTheme()" />
+        <NSwitch size="small" :value="isDark" @update:value="(v: boolean) => setTheme(v)" />
       </NLayoutHeader>
       <NLayout has-sider position="absolute" style="top: 52px">
         <NLayoutSider bordered :width="180" :collapsed-width="0" collapse-mode="width" show-trigger="bar">

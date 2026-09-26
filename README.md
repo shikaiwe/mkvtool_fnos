@@ -1,7 +1,8 @@
 # MKVToolNix for fnOS
 
 把 [MKVToolNix](https://mkvtoolnix.download/) 的全部核心能力装进飞牛 fnOS 的 Web 应用：
-**混流（mkvmerge）、信息查看、轨道/附件/章节提取（mkvextract）、免重混流的属性编辑（mkvpropedit）、章节编辑器、任务队列与实时进度**。
+**内封字幕（主用途）：快速内封（单视频+多字幕，语言/轨道名/字符集自动识别）与批量内封（整季目录自动配对成任务）**，
+外加完整混流（mkvmerge）、信息查看、轨道/附件/章节提取（mkvextract）、免重混流的属性编辑（mkvpropedit）、章节编辑器、任务队列与实时进度。
 前端 Vue 3 + Naive UI（暗色主题、中英双语），后端 Node.js 22，底层全部调用官方命令行工具（未修改、原样打包）。
 
 ## 目录结构
@@ -33,9 +34,9 @@
    ```
 
    脚本会依次：构建前端 → 组装后端（含 `node_modules`）→ 下载 MKVToolNix 官方 AppImage 并提取
-   CLI 二进制与捆绑库 → 调用 `fnpack build` 生成 `mkvtoolnix.fpk`。
-4. 安装到 fnOS：应用中心右上角「手动安装」选择 `.fpk`；或设备上执行
-   `appcenter-cli install-fpk mkvtoolnix.fpk`。
+   CLI 二进制与捆绑库 → 调用 `fnpack build` 生成 `mkvtoolnix-<版本号>.fpk`（版本号取自 manifest）。
+4. 安装到 fnOS：应用中心「手动安装」选择 `.fpk`；或设备上执行
+   `appcenter-cli install-fpk mkvtoolnix-<版本号>.fpk`。
 5. **装完必须授权目录**：系统设置 → 应用 → MKVToolNix → 文件访问授权，勾选媒体所在目录，
    否则文件浏览器为空。
 

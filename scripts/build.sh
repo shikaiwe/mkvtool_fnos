@@ -32,9 +32,14 @@ command -v "$FNPACK" >/dev/null 2>&1 || FNPACK="$ROOT/tools/fnpack"
 echo "==> fnpack build ($FNPACK)"
 "$FNPACK" build
 
-# fnpack(Windows 版)会把 manifest 重写成 CRLF,fnOS 解析时值带 \r,
-# 安装报「应用包不符合系统要求」;Linux 构建无此问题,脚本自会跳过。
-echo '==> 规范化 fpk 内文本行尾 (CRLF -> LF)'
-bash scripts/fix-fpk-crlf.sh mkvtoolnix.fpk
+# fnpack(Windows 版)写出的 CRLF manifest 与 0666 app.tgz 都已实证无害
+# (真机对照:原生包 R1/R0 可装,凡经 tar 重打包的 W 系列全被拒)。
+# 不要在 fnpack 输出后对 .fpk 做任何解包/重打包——那正是安装失败的原因。
+# （仅 mv 改名不影响包内容，是安全的）
 
-echo '构建完成。'
+# 输出文件名带上版本号（版本取自 manifest）
+VERSION="$(grep -E '^version=' manifest | head -n1 | cut -d= -f2 | tr -d '[:space:]')"
+if [ -f mkvtoolnix.fpk ] && [ -n "$VERSION" ]; then
+  mv -f mkvtoolnix.fpk "mkvtoolnix-$VERSION.fpk"
+fi
+echo "构建完成：mkvtoolnix-$VERSION.fpk"

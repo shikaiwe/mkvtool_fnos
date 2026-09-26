@@ -8,6 +8,7 @@ import { allowedRoots, assertAllowed, listDir, MEDIA_EXTENSIONS } from '../lib/p
 import * as jobs from '../lib/jobs.mjs'
 import { toolStatus, version, identify, run } from '../lib/mkv.mjs'
 import { parseChaptersXml, buildChaptersXml } from '../lib/chapters.mjs'
+import { detectSubCharset } from '../lib/subcharset.mjs'
 
 export function registerRoutes(router) {
   // ---------- 系统信息 ----------
@@ -144,6 +145,27 @@ export function registerRoutes(router) {
     const file = path.join(env.pkgTmp, `chapters-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.xml`)
     fs.writeFileSync(file, xml)
     json(res, 200, { file, xml })
+  })
+
+  // ---------- 字幕编码检测 ----------
+  // 批量检测文本字幕的字符集（供内封字幕 --sub-charset 使用）。items: [{ path, hint? }]
+  router.add('POST', '/api/subtitles/charset', async ({ res, body }) => {
+    const items = Array.isArray(body.items) ? body.items.slice(0, 200) : []
+    const results = {}
+    for (const item of items) {
+      const p = typeof item === 'string' ? item : String(item?.path || '')
+      const hint = typeof item === 'object' && item ? String(item.hint || '') : ''
+      if (!p) continue
+      let file = null
+      try {
+        file = assertAllowed(p)
+        if (!fs.statSync(file).isFile()) file = null
+      } catch {
+        /* 单个文件不存在/越界不拖垮整批 */
+      }
+      results[p] = file ? detectSubCharset(file, hint) : null
+    }
+    json(res, 200, { results })
   })
 
   // ---------- 兼容性占位 ----------

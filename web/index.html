@@ -7,10 +7,54 @@
     <title>MKVToolNix</title>
     <style>
       html { background: #101014; }
+      #boot-fail {
+        display: none; position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+        max-width: min(720px, 92vw); padding: 10px 16px; border-radius: 8px; cursor: pointer;
+        background: #2a2a33; color: #e8e8ee; font: 13px/1.6 system-ui, sans-serif;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); white-space: pre-wrap; word-break: break-all;
+        z-index: 9999;
+      }
     </style>
+    <script>
+      // 按已保存主题预设 html 背景，避免浅色模式下闪黑/露底（默认深色）
+      try {
+        if (localStorage.getItem('mkv.theme') === 'light') {
+          document.documentElement.style.background = '#ffffff'
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="app"></div>
+    <div id="boot-fail"></div>
     <script type="module" src="/src/main.ts"></script>
+    <script>
+      // 引导诊断：前端加载/执行失败时页面只剩黑底且服务端日志无输出。
+      // 10s 后仍未挂载则把已捕获的错误显示在页面上（点击关闭），正常挂载则静默。
+      ;(function () {
+        var errs = []
+        var box = document.getElementById('boot-fail')
+        window.addEventListener('error', function (e) {
+          if (e.target && e.target !== window && (e.target.src || e.target.href)) {
+            errs.push('资源加载失败: ' + (e.target.src || e.target.href))
+          } else if (e.message) {
+            errs.push(e.message + (e.filename ? ' @ ' + e.filename + ':' + (e.lineno || 0) : ''))
+          }
+        }, true)
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e.reason
+          errs.push('Promise: ' + ((r && r.stack) || r))
+        })
+        box.addEventListener('click', function () { box.style.display = 'none' })
+        setTimeout(function () {
+          if (document.getElementById('app').childElementCount) return
+          box.textContent =
+            (errs.length ? errs.join('\n') : '界面 10 秒内未完成加载') +
+            '\n页面: ' + location.href +
+            '\n（点击关闭；详情见浏览器控制台 F12）'
+          box.style.display = 'block'
+        }, 10000)
+      })()
+    </script>
   </body>
 </html>

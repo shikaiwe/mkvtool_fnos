@@ -150,7 +150,7 @@ async function submit() {
       <NCard :title="$t('propedit.segInfo')">
         <NSpace>
           <div>
-            <div style="font-size: 12px; opacity: 0.7; margin-bottom: 4px">{{ $t('propedit.title') }}</div>
+            <div style="font-size: 12px; opacity: 0.7; margin-bottom: 4px">{{ $t('propedit.segTitle') }}</div>
             <NInput v-model:value="segTitle" style="width: 320px" />
           </div>
           <div>

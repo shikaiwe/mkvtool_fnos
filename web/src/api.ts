@@ -96,6 +96,8 @@ export const api = {
   retryJob: (id: string) => request<Job>('POST', `/api/jobs/${id}/retry`),
   deleteJob: (id: string) => request<{ removed: boolean }>('DELETE', `/api/jobs/${id}`),
   identify: (path: string) => request<Identification>('POST', '/api/identify', { path }),
+  detectCharsets: (items: { path: string; hint?: string }[]) =>
+    request<{ results: Record<string, string | null> }>('POST', '/api/subtitles/charset', { items }),
   rawInfo: (path: string, verbose: number) =>
     request<{ exitCode: number; output: string }>('POST', '/api/info/raw', { path, verbose }),
   chaptersFromFile: (path: string) => request<{ editions: Edition[]; xml: string }>(

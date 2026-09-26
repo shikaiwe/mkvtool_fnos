@@ -55,17 +55,20 @@ try {
     & $Fnpack build
     if ($LASTEXITCODE -ne 0) { throw 'fnpack build failed' }
 
-    # fnpack(Windows 版)会把 manifest 重写成 CRLF,fnOS 解析时值带 \r,
-    # 安装报「应用包不符合系统要求」。需要 Git Bash 里的 bash 执行修复脚本。
-    Write-Host '==> normalize fpk text line endings (CRLF -> LF)'
-    $bash = Get-Command bash.exe -ErrorAction SilentlyContinue
-    if ($bash) {
-        & $bash.Source (Join-Path $PSScriptRoot 'fix-fpk-crlf.sh') 'mkvtoolnix.fpk'
-        if ($LASTEXITCODE -ne 0) { throw 'fix-fpk-crlf failed' }
-    } else {
-        Write-Warning 'bash not found; run scripts/fix-fpk-crlf.sh manually in Git Bash before installing the fpk.'
+    # fnpack(Windows 版)写出的 CRLF manifest 已实证无害(原生包真机可装);
+    # 反而是此前对 fpk 的 tar 重打包导致「应用包格式不符合系统版本要求」。
+    # 不要在 fnpack 输出后对 .fpk 做任何解包/重打包。
+    # （仅 Rename-Item 改名不影响包内容，是安全的）
+
+    # 输出文件名带上版本号（版本取自 manifest）
+    $Version = ''
+    foreach ($line in Get-Content 'manifest') {
+        if ($line -match '^\s*version\s*=\s*(.+?)\s*$') { $Version = $Matches[1]; break }
     }
-    Write-Host 'build done.'
+    if ((Test-Path 'mkvtoolnix.fpk') -and $Version) {
+        Move-Item -Force 'mkvtoolnix.fpk' "mkvtoolnix-$Version.fpk"
+    }
+    Write-Host "build done: mkvtoolnix-$Version.fpk"
 } finally {
     Pop-Location
 }

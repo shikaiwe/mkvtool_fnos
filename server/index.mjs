@@ -5,7 +5,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import { env } from './lib/env.mjs'
-import { createRouter, serveStatic } from './lib/httpx.mjs'
+import { createRouter, serveStatic, normalizeGatewayUrl } from './lib/httpx.mjs'
 import { attachWs, broadcast } from './lib/ws.mjs'
 import { registerRoutes } from './api/routes.mjs'
 import * as jobs from './lib/jobs.mjs'
@@ -20,11 +20,13 @@ registerRoutes(router)
 
 function handler(req, res) {
   let url = req.url || '/'
-  // 统一网关会把 /app/<appname>/... 原样转发，这里剥掉前缀；同时兼容不带前缀的访问
-  if (env.gwPrefix) {
-    if (url === env.gwPrefix) url = '/'
-    else if (url.startsWith(env.gwPrefix + '/')) url = url.slice(env.gwPrefix.length)
+  // 统一网关会把 /app/<appname>/... 原样转发，这里归一化前缀；同时兼容不带前缀的访问
+  const norm = normalizeGatewayUrl(url, env.gwPrefix)
+  if (norm.redirect) {
+    res.writeHead(302, { Location: norm.redirect })
+    return res.end()
   }
+  url = norm.url
   let pathname
   try {
     pathname = decodeURIComponent(new URL(url, 'http://x').pathname)

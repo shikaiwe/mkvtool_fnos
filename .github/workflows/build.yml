@@ -46,31 +46,32 @@ jobs:
           chmod +x tools/fnpack
 
       - name: Pack fpk
-        run: ./tools/fnpack build
+        run: |
+          ./tools/fnpack build
+          VERSION="$(grep -E '^version=' manifest | head -n1 | cut -d= -f2 | tr -d '[:space:]')"
+          # 仅 mv 改名不影响包内容；勿做任何解包/重打包
+          mv mkvtoolnix.fpk "mkvtoolnix-$VERSION.fpk"
 
-      # Linux 版 fnpack 写的是 LF,此步通常为空操作;兜底防 fnpack 行为变化
-      # (Windows 版会把 manifest 重写成 CRLF,导致 fnOS 报「应用包不符合系统要求」)
-      - name: Normalize fpk line endings
-        run: bash scripts/fix-fpk-crlf.sh mkvtoolnix.fpk
-
+      # 原生 fnpack 产物(CRLF manifest/0666 权限)真机可装;任何 tar 重打包
+      # 都会导致「应用包格式不符合系统版本要求」,勿对 fpk 做后处理。
       - name: Upload artifact (Actions 页可下载)
         uses: actions/upload-artifact@v4
         with:
           name: mkvtoolnix-fpk
-          path: mkvtoolnix.fpk
+          path: mkvtoolnix-*.fpk
 
       - name: Release (仅打 v* 标签时，发布到 Releases)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            mkvtoolnix.fpk
+            mkvtoolnix-*.fpk
             THIRD-PARTY-LICENSES.md
           body: |
             MKVToolNix for fnOS（${{ github.ref_name }}）
 
-            安装：fnOS 应用中心「手动安装」导入 mkvtoolnix.fpk（需安装 nodejs_v22 运行时），
-            安装后在 应用设置 → 文件访问授权 中勾选媒体目录。
+            安装：fnOS 应用中心「手动安装」导入随附的 mkvtoolnix-版本号.fpk
+            （需安装 nodejs_v22 运行时），安装后在 应用设置 → 文件访问授权 中勾选媒体目录。
 
             合规说明：包内包含未修改的 MKVToolNix 官方二进制（GPL-2.0，
             捆绑的 libebml/libmatroska 为 LGPL）。许可文本见包内 licenses/ 目录与
