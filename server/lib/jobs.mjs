@@ -236,6 +236,15 @@ export function remove(id) {
   return true
 }
 
+// 一键清理已结束的任务记录（done/failed/canceled/interrupted），排队/运行中的不动
+export function clearFinished() {
+  const ids = [...jobs.values()]
+    .filter((j) => !QUEUED_STATUSES.has(j.status))
+    .map((j) => j.id)
+  for (const id of ids) remove(id)
+  return ids.length
+}
+
 export function shutdown() {
   for (const [id, child] of children) {
     cancelRequested.add(id)

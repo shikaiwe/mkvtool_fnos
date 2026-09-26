@@ -1,16 +1,16 @@
 <script setup lang="ts">
 // 批量内封：扫描视频/字幕目录，按文件名自动配对（支持视频带发布组标签、字幕被重命名干净的场景），
 // 一键把每一组提交为独立的 mkvmerge 任务。字符集检测与快速内封共用同一后端接口。
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NCard, NSpace, NButton, NInput, NCheckbox, NTag, NAlert, NTable, NSpin, NGrid, NGi, useMessage,
+  NCard, NSpace, NButton, NInput, NCheckbox, NAlert, NTable, NSpin, NGrid, NGi, NSelect, NSwitch, useMessage,
 } from 'naive-ui'
 import { api, type FileEntry } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
 import {
   buildSubMuxArgv, defaultOutputFor, guessLanguage, joinPath, pairVideos,
-  SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS, extOf, type SubRow,
+  SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS, SUB_CHARSETS, SUB_LANG_PRESETS, extOf, type SubRow,
 } from '../subtitles'
 
 const { t } = useI18n()
@@ -24,13 +24,12 @@ const dropEmbedded = ref(false)
 
 interface ScanRow {
   video: FileEntry
-  subs: FileEntry[]
+  subs: SubRow[]
   include: boolean
 }
 const rows = ref<ScanRow[]>([])
 const unmatchedVideos = ref<FileEntry[]>([])
 const unmatchedSubs = ref<FileEntry[]>([])
-const charsetMap = ref<Record<string, string | null>>({})
 const scanning = ref(false)
 const submitting = ref(false)
 const scanned = ref(false)
@@ -59,7 +58,8 @@ function rowOutDir(videoPath: string) {
   return outDir.value || videoPath.slice(0, Math.max(videoPath.lastIndexOf('/'), videoPath.lastIndexOf('\\')))
 }
 
-function rowToSubRows(subs: FileEntry[]): SubRow[] {
+// 扫描结果即编辑态：语言/轨道名按文件名猜（猜不出为 und，可手动改），字符集由后端检测后写回
+function toSubRows(subs: FileEntry[]): SubRow[] {
   return subs.map((s, i) => {
     const g = guessLanguage(s.name)
     return {
@@ -69,10 +69,25 @@ function rowToSubRows(subs: FileEntry[]): SubRow[] {
       trackName: g?.name || '',
       isDefault: i === 0, // 组内已按 简>繁>英>其他 排序，第一条做默认
       isForced: false,
-      charset: charsetMap.value[s.path] || '',
+      charset: '',
     }
   })
 }
+
+const langOptions = (current: string) =>
+  [...new Set([current, ...SUB_LANG_PRESETS])].filter(Boolean).map((v) => ({ label: v, value: v }))
+const charsetOptions = (current: string) =>
+  [...new Set([current, ...SUB_CHARSETS])].filter(Boolean).map((v) => ({ label: v, value: v }))
+
+// 组内默认轨道互斥
+function setDefault(group: SubRow[], row: SubRow, v: boolean) {
+  if (v) group.forEach((s) => (s.isDefault = s === row))
+  else row.isDefault = false
+}
+
+const undetectedCount = computed(() =>
+  rows.value.reduce((n, r) => n + r.subs.filter((s) => s.lang === 'und').length, 0)
+)
 
 async function scan() {
   if (!videoDir.value) {
@@ -88,19 +103,21 @@ async function scan() {
     const videos = vres.entries.filter((e) => !e.isDir && VIDEO_EXTENSIONS.has(extOf(e.name)))
     const subFiles = sres.entries.filter((e) => !e.isDir && SUBTITLE_EXTENSIONS.has(extOf(e.name)))
     const pr = pairVideos(videos, subFiles, outSuffix.value)
-    rows.value = pr.rows.map((r) => ({ ...r, include: true }))
+    rows.value = pr.rows.map((r) => ({ video: r.video, subs: toSubRows(r.subs), include: true }))
     unmatchedVideos.value = pr.unmatchedVideos
     unmatchedSubs.value = pr.unmatchedSubs
     scanned.value = true
 
-    // 批量字符集检测（全部字幕一次性发给后端）
-    charsetMap.value = {}
-    const allSubs = pr.rows.flatMap((r) => r.subs)
+    // 批量字符集检测（全部字幕一次性发给后端），结果直接写回各行，行内可手动覆盖
+    const allSubs = rows.value.flatMap((r) => r.subs)
     if (allSubs.length) {
-      const items = allSubs.map((s) => ({ path: s.path, hint: guessLanguage(s.name)?.hint || '' }))
+      const items = allSubs.map((s) => ({ path: s.path, hint: guessLanguage(s.fileName)?.hint || '' }))
       try {
         const { results } = await api.detectCharsets(items)
-        charsetMap.value = results
+        for (const s of allSubs) {
+          const cs = results[s.path]
+          if (cs) s.charset = cs
+        }
       } catch {
         /* 检测失败则不指定字符集 */
       }
@@ -132,7 +149,7 @@ async function submit() {
       outPath,
       videoPath: r.video.path,
       dropEmbeddedSubs: dropEmbedded.value,
-      subs: rowToSubRows(r.subs),
+      subs: r.subs,
     })
     try {
       await api.createJob({ name: outNameFor(r.video.path), tool: 'mkvmerge', argv })
@@ -234,38 +251,73 @@ watch([videoDir, subDir, outDir, outSuffix, dropEmbedded], saveDraft)
           </NButton>
         </template>
         <NAlert v-if="!rows.length" type="info" :show-icon="false">{{ $t('bsub.noPairs') }}</NAlert>
-        <NTable v-else size="small" :single-line="false" :bordered="false">
-          <thead>
-            <tr>
-              <th style="width: 50px">{{ $t('bsub.colInclude') }}</th>
-              <th>{{ $t('bsub.colVideo') }}</th>
-              <th>{{ $t('bsub.colSubs') }}</th>
-              <th style="width: 30%">{{ $t('bsub.colOut') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in rows" :key="r.video.path">
-              <td><NCheckbox v-model:checked="r.include" size="small" /></td>
-              <td style="word-break: break-all; font-size: 12px">{{ r.video.path }}</td>
-              <td>
-                <NSpace size="small">
-                  <NTag
-                    v-for="s in r.subs"
-                    :key="s.path"
-                    size="tiny"
-                    :bordered="false"
-                    :type="guessLanguage(s.name)?.hint === 'zh-hans' ? 'success' : 'default'"
-                  >
-                    {{ s.name }}<template v-if="charsetMap[s.path]"> · {{ charsetMap[s.path] }}</template>
-                  </NTag>
-                </NSpace>
-              </td>
-              <td style="font-size: 12px; opacity: 0.75">
-                {{ joinPath(rowOutDir(r.video.path), outNameFor(r.video.path)) }}
-              </td>
-            </tr>
-          </tbody>
-        </NTable>
+        <template v-else>
+          <NAlert v-if="undetectedCount" type="warning" :show-icon="false" style="margin-bottom: 8px">
+            {{ $t('bsub.undetected', { n: undetectedCount }) }}
+          </NAlert>
+          <NTable size="small" :single-line="false" :bordered="false">
+            <thead>
+              <tr>
+                <th style="width: 50px">{{ $t('bsub.colInclude') }}</th>
+                <th>{{ $t('bsub.colVideo') }}</th>
+                <th style="width: 45%">{{ $t('bsub.colSubs') }}</th>
+                <th style="width: 25%">{{ $t('bsub.colOut') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in rows" :key="r.video.path">
+                <td><NCheckbox v-model:checked="r.include" size="small" /></td>
+                <td style="word-break: break-all; font-size: 12px">{{ r.video.path }}</td>
+                <td>
+                  <div v-for="s in r.subs" :key="s.path" class="sub-edit">
+                    <div class="sub-file" :title="s.path">{{ s.fileName }}</div>
+                    <NGrid :cols="4" :x-gap="8" :y-gap="8">
+                      <NGi>
+                        <div class="field-label">{{ $t('qsub.lang') }}</div>
+                        <NSelect
+                          v-model:value="s.lang"
+                          size="small"
+                          tag
+                          filterable
+                          :status="s.lang === 'und' ? 'warning' : undefined"
+                          :options="langOptions(s.lang)"
+                        />
+                      </NGi>
+                      <NGi>
+                        <div class="field-label">{{ $t('qsub.charset') }}</div>
+                        <NSelect
+                          :value="s.charset || null"
+                          size="small"
+                          tag
+                          filterable
+                          clearable
+                          :placeholder="$t('qsub.charsetNone')"
+                          :options="charsetOptions(s.charset)"
+                          @update:value="(v: string | null) => (s.charset = v || '')"
+                        />
+                      </NGi>
+                      <NGi>
+                        <div class="field-label">{{ $t('qsub.def') }}</div>
+                        <NSwitch :value="s.isDefault" size="small" @update:value="(v: boolean) => setDefault(r.subs, s, v)" />
+                      </NGi>
+                      <NGi>
+                        <div class="field-label">{{ $t('qsub.forced') }}</div>
+                        <NSwitch v-model:value="s.isForced" size="small" />
+                      </NGi>
+                      <NGi :span="4">
+                        <div class="field-label">{{ $t('qsub.trackName') }}</div>
+                        <NInput v-model:value="s.trackName" size="small" />
+                      </NGi>
+                    </NGrid>
+                  </div>
+                </td>
+                <td style="font-size: 12px; opacity: 0.75">
+                  {{ joinPath(rowOutDir(r.video.path), outNameFor(r.video.path)) }}
+                </td>
+              </tr>
+            </tbody>
+          </NTable>
+        </template>
         <div v-if="rows.length" style="margin-top: 8px; font-size: 12px; opacity: 0.6">
           <div v-if="unmatchedVideos.length">{{ $t('bsub.unmatchedVideos', { n: unmatchedVideos.length }) }}：{{ unmatchedVideos.map((v) => v.name).join('、') }}</div>
           <div v-if="unmatchedSubs.length">{{ $t('bsub.unmatchedSubs', { n: unmatchedSubs.length }) }}：{{ unmatchedSubs.map((s) => s.name).join('、') }}</div>
@@ -289,5 +341,17 @@ watch([videoDir, subDir, outDir, outSuffix, dropEmbedded], saveDraft)
   margin-bottom: 4px;
   font-size: 13px;
   opacity: 0.7;
+}
+.sub-edit {
+  padding: 6px 0;
+}
+.sub-edit + .sub-edit {
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+}
+.sub-file {
+  margin-bottom: 6px;
+  font-size: 12px;
+  word-break: break-all;
+  opacity: 0.85;
 }
 </style>

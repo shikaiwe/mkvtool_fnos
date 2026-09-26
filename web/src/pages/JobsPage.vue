@@ -112,6 +112,16 @@ async function doDelete(row: Job) {
   }
 }
 
+async function doClearFinished() {
+  try {
+    const { removed } = await api.clearFinishedJobs()
+    jobsState.jobs = jobsState.jobs.filter((j) => j.status === 'running' || j.status === 'queued')
+    message.success(t('jobs.cleared', { n: removed }))
+  } catch (e: any) {
+    message.error(e.message)
+  }
+}
+
 const newJobOptions = [
   { label: () => t('jobs.newMux'), key: '/muxer' },
   { label: () => t('jobs.newExtract'), key: '/extract' },
@@ -121,9 +131,19 @@ const newJobOptions = [
 <template>
   <NCard :title="$t('menu.jobs')" style="height: 100%">
     <template #header-extra>
-      <NDropdown :options="newJobOptions" @select="(k: string) => router.push(k)">
-        <NButton type="primary">{{ $t('jobs.newJob') }}</NButton>
-      </NDropdown>
+      <NSpace>
+        <NPopconfirm @positive-click="doClearFinished">
+          <template #trigger>
+            <NButton
+              :disabled="!jobsState.jobs.some((j) => j.status !== 'running' && j.status !== 'queued')"
+            >{{ $t('jobs.clearFinished') }}</NButton>
+          </template>
+          {{ $t('jobs.clearFinishedConfirm') }}
+        </NPopconfirm>
+        <NDropdown :options="newJobOptions" @select="(k: string) => router.push(k)">
+          <NButton type="primary">{{ $t('jobs.newJob') }}</NButton>
+        </NDropdown>
+      </NSpace>
     </template>
     <NDataTable :columns="columns" :data="jobsState.jobs" :bordered="false" size="small" />
     <LogDrawer v-model:show="showLog" :job="logJob" />

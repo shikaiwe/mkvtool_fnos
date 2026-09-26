@@ -95,6 +95,8 @@ export const api = {
   cancelJob: (id: string) => request<Job>('POST', `/api/jobs/${id}/cancel`),
   retryJob: (id: string) => request<Job>('POST', `/api/jobs/${id}/retry`),
   deleteJob: (id: string) => request<{ removed: boolean }>('DELETE', `/api/jobs/${id}`),
+  clearFinishedJobs: () => request<{ removed: number }>('POST', '/api/jobs/clear-finished'),
+  logs: (tail = 500) => request<{ lines: string[]; file: string }>(`GET`, `/api/logs?tail=${tail}`),
   identify: (path: string) => request<Identification>('POST', '/api/identify', { path }),
   detectCharsets: (items: { path: string; hint?: string }[]) =>
     request<{ results: Record<string, string | null> }>('POST', '/api/subtitles/charset', { items }),

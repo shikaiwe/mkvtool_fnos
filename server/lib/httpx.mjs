@@ -1,6 +1,7 @@
 // 极简 HTTP 框架：路由、JSON 体解析、静态文件托管、网关前缀剥离。
 import fs from 'node:fs'
 import path from 'node:path'
+import { addLog } from './applog.mjs'
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -36,7 +37,10 @@ export function json(res, code, data) {
 
 export function apiError(res, err) {
   const code = err.statusCode || 500
-  if (code >= 500) console.error('[api]', err)
+  if (code >= 500) {
+    console.error('[api]', err)
+    addLog('[api]', err)
+  }
   json(res, code, { error: err.message || String(err) })
 }
 

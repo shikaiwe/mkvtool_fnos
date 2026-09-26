@@ -9,9 +9,11 @@ import { createRouter, serveStatic, normalizeGatewayUrl } from './lib/httpx.mjs'
 import { attachWs, broadcast } from './lib/ws.mjs'
 import { registerRoutes } from './api/routes.mjs'
 import * as jobs from './lib/jobs.mjs'
+import { addLog } from './lib/applog.mjs'
 
 function log(...args) {
   console.log(new Date().toISOString(), ...args)
+  addLog(...args) // 运行日志另行入环形缓冲并落盘，供前端「日志」页查看
 }
 
 // ---------- 路由与静态 ----------
@@ -68,6 +70,7 @@ function handler(req, res) {
 
 // ---------- 启动 ----------
 async function main() {
+  log('app start', `${env.appName} ${env.appVersion}`, env.dev ? '(dev)' : '')
   for (const dir of [env.pkgVar, env.pkgEtc, env.pkgTmp]) {
     fs.mkdirSync(dir, { recursive: true })
   }
@@ -114,6 +117,7 @@ async function main() {
 
 main().catch((err) => {
   console.error('fatal:', err)
+  addLog('fatal', err)
   if (env.pkgVar && process.env.TRIM_TEMP_LOGFILE) {
     try {
       fs.appendFileSync(process.env.TRIM_TEMP_LOGFILE, `server fatal: ${err.message}\n`)

@@ -15,6 +15,7 @@ const menuOptions = computed(() => [
   { label: i18n.global.t('menu.propedit'), key: '/propedit' },
   { label: i18n.global.t('menu.info'), key: '/info' },
   { label: i18n.global.t('menu.chapters'), key: '/chapters' },
+  { label: i18n.global.t('menu.logs'), key: '/logs' },
   { label: i18n.global.t('menu.settings'), key: '/settings' },
   { label: i18n.global.t('menu.about'), key: '/about' },
 ])

@@ -9,10 +9,10 @@ const TEXT_SUB_EXTENSIONS = new Set(['srt', 'ass', 'ssa', 'sub', 'vtt', 'smi', '
 // 采样头部 128KB 足够判断编码
 const SAMPLE_SIZE = 128 * 1024
 
-// hint: 'zh-hans' | 'zh-hant' | ''（来自字幕文件名的语言标记，用于 GBK/Big5 优先级）
+// hint: 'zh-hans' | 'zh-hant' | 'ja' | ''（来自字幕文件名的语言标记，用于候选编码优先级）
 function candidateCharsets(hint) {
   if (hint === 'zh-hant') return ['BIG5', 'GB18030']
-  if (hint === 'zh-hans') return ['GB18030', 'BIG5']
+  if (hint === 'ja') return ['SHIFT_JIS', 'EUC-JP']
   return ['GB18030', 'BIG5']
 }
 

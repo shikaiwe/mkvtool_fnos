@@ -11,6 +11,7 @@ export const router = createRouter({
     { path: '/propedit', component: () => import('./pages/PropEditPage.vue') },
     { path: '/info', component: () => import('./pages/InfoPage.vue') },
     { path: '/chapters', component: () => import('./pages/ChaptersPage.vue') },
+    { path: '/logs', component: () => import('./pages/LogPage.vue') },
     { path: '/settings', component: () => import('./pages/SettingsPage.vue') },
     { path: '/about', component: () => import('./pages/AboutPage.vue') },
   ],

@@ -11,7 +11,7 @@ import {
 import { api, type Identification } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
 import {
-  buildSubMuxArgv, defaultOutputFor, guessLanguage, joinPath, SUB_LANG_PRESETS,
+  buildSubMuxArgv, defaultOutputFor, guessLanguage, joinPath, SUB_CHARSETS, SUB_LANG_PRESETS,
   SUBTITLE_EXTENSIONS, extOf, type SubRow,
 } from '../subtitles'
 
@@ -31,8 +31,6 @@ const outName = ref('')
 
 const browser = ref(false)
 let browserTarget: 'video' | 'subs' | 'outDir' | null = null
-
-const CHARSETS = ['UTF-8', 'GB18030', 'BIG5', 'UTF-16LE', 'UTF-16BE', 'SHIFT_JIS', 'EUC-KR', 'WINDOWS-1252']
 
 function openBrowser(target: typeof browserTarget) {
   browserTarget = target
@@ -55,7 +53,7 @@ const langOptions = (current: string) =>
     .filter(Boolean)
     .map((v) => ({ label: v, value: v }))
 const charsetOptions = (current: string) =>
-  [...new Set([current, ...CHARSETS])].filter(Boolean).map((v) => ({ label: v, value: v }))
+  [...new Set([current, ...SUB_CHARSETS])].filter(Boolean).map((v) => ({ label: v, value: v }))
 
 async function pickVideo(p: string) {
   videoPath.value = p

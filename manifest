@@ -1,5 +1,5 @@
 appname=mkvtoolnix
-version=0.2.0
+version=0.2.1
 display_name=MKVToolNix
 desc=MKVToolNix Web —— 内封字幕（快速内封/批量配对）、混流、信息查看、轨道提取与属性编辑，底层调用官方 mkvtoolnix 命令行工具
 source=thirdparty

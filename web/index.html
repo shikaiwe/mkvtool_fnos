@@ -6,7 +6,7 @@
     <meta name="referrer" content="no-referrer" />
     <title>MKVToolNix</title>
     <style>
-      html { background: #101014; }
+      html { background: #ffffff; }
       #boot-fail {
         display: none; position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
         max-width: min(720px, 92vw); padding: 10px 16px; border-radius: 8px; cursor: pointer;
@@ -16,10 +16,10 @@
       }
     </style>
     <script>
-      // 按已保存主题预设 html 背景，避免浅色模式下闪黑/露底（默认深色）
+      // 按已保存主题预设 html 背景，避免深色模式下闪白/露底（默认浅色）
       try {
-        if (localStorage.getItem('mkv.theme') === 'light') {
-          document.documentElement.style.background = '#ffffff'
+        if (localStorage.getItem('mkv.theme') === 'dark') {
+          document.documentElement.style.background = '#101014'
         }
       } catch (e) {}
     </script>

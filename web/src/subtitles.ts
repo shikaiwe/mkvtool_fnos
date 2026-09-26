@@ -12,7 +12,7 @@ export const TEXT_SUBTITLE_EXTENSIONS = new Set(['srt', 'ass', 'ssa', 'sub', 'vt
 export interface LangGuess {
   lang: string
   name: string
-  hint: '' | 'zh-hans' | 'zh-hant'
+  hint: '' | 'zh-hans' | 'zh-hant' | 'ja'
 }
 
 // 文件名语言标记（按 token 全等匹配，token 按 . _ - 空格 等切分）
@@ -21,7 +21,7 @@ const LANG_TAG_MATCHERS: { re: RegExp; guess: LangGuess }[] = [
   { re: /^(繁体|繁體|繁|cht|tc|big5|b5|zht|zhhant|zh-hant|tw|hk)$/i, guess: { lang: 'chi', name: '繁體中文', hint: 'zh-hant' } },
   { re: /^(zh|zho|chi|chinese|cn)$/i, guess: { lang: 'chi', name: '中文', hint: 'zh-hans' } },
   { re: /^(eng|en|english)$/i, guess: { lang: 'eng', name: 'English', hint: '' } },
-  { re: /^(jpn|jp|ja|japanese)$/i, guess: { lang: 'jpn', name: '日本語', hint: '' } },
+  { re: /^(jpn|jp|ja|japanese)$/i, guess: { lang: 'jpn', name: '日本語', hint: 'ja' } },
   { re: /^(kor|kr|ko|korean)$/i, guess: { lang: 'kor', name: '한국어', hint: '' } },
   { re: /^(fre|fra|fr|french)$/i, guess: { lang: 'fre', name: 'Français', hint: '' } },
   { re: /^(ger|deu|de|german)$/i, guess: { lang: 'ger', name: 'Deutsch', hint: '' } },
@@ -37,24 +37,45 @@ export function extOf(name: string): string {
   return i > 0 ? name.slice(i + 1).toLowerCase() : ''
 }
 
+// 单个 token 的语言匹配：
+// 1) 复合标记（chs&eng）按规则表顺序优先命中——结果与书写顺序无关（jp&sc 与 sc&jp 同为简体中文）；
+// 2) 连写组合（JPSC = jp+sc）拆成两段，两段都命中某条规则才认，取规则表更靠前（中文优先）的那个。
+export function matchLangToken(token: string): LangGuess | null {
+  const t = token.toLowerCase()
+  const parts = t.split(/[&+]/)
+  for (const m of LANG_TAG_MATCHERS) {
+    for (const p of parts) {
+      if (m.re.test(p)) return m.guess
+    }
+  }
+  if (parts.length === 1 && t.length >= 2) {
+    for (let i = 1; i < t.length; i++) {
+      const h = LANG_TAG_MATCHERS.findIndex((m) => m.re.test(t.slice(0, i)))
+      const g = LANG_TAG_MATCHERS.findIndex((m) => m.re.test(t.slice(i)))
+      if (h < 0 || g < 0) continue
+      return (h <= g ? LANG_TAG_MATCHERS[h] : LANG_TAG_MATCHERS[g]).guess
+    }
+  }
+  return null
+}
+
 // 从文件名猜字幕语言：从文件名末段往前找语言标记（如 Movie.chs.ass → 简体中文）
 export function guessLanguage(fileName: string): LangGuess | null {
   const ext = extOf(fileName)
   const base = ext ? fileName.slice(0, fileName.length - ext.length - 1) : fileName
   const tokens = base.split(/[._\- [\]()]+/).filter(Boolean)
   for (let i = tokens.length - 1; i >= 0; i--) {
-    // 一个 token 可能复合多种语言，如 "chs&eng"
-    for (const part of tokens[i].toLowerCase().split(/[&+]/)) {
-      for (const m of LANG_TAG_MATCHERS) {
-        if (m.re.test(part)) return m.guess
-      }
-    }
+    const g = matchLangToken(tokens[i])
+    if (g) return g
   }
   return null
 }
 
 // 语言下拉框候选（沿用高级模式的常用语言）
 export const SUB_LANG_PRESETS = ['chi', 'zho', 'eng', 'jpn', 'kor', 'fre', 'ger', 'spa', 'rus', 'tha', 'por', 'ita', 'und']
+
+// 字符集下拉候选（快速/批量内封共用；后端自动检测仅覆盖 UTF-8 与 GB18030/BIG5/日文系）
+export const SUB_CHARSETS = ['UTF-8', 'GB18030', 'BIG5', 'UTF-16LE', 'UTF-16BE', 'SHIFT_JIS', 'EUC-JP', 'EUC-KR', 'WINDOWS-1252']
 
 // 字幕行在列表中的默认排序：简中 > 繁中 > 英文 > 其余按名称
 export function subSortScore(fileName: string): number {
@@ -97,17 +118,13 @@ export function joinPath(dir: string, name: string): string {
 
 // ---------- 批量配对 ----------
 
-// 配对键：去掉扩展名与语言标记后的小写串（S01E01.chs.ass 与 S01E01.mkv 归为一组）
+// 配对键：去掉扩展名与语言标记后的小写串（S01E01.chs.ass 与 S01E01.mkv 归为一组；
+// 连写组合如 jpsc 同样视为语言标记剔除）
 export function pairingKey(fileName: string): string {
   const ext = extOf(fileName)
   const base = ext ? fileName.slice(0, fileName.length - ext.length - 1) : fileName
   const tokens = base.split(/[._\- [\]()]+/).filter(Boolean)
-  const kept = tokens.filter((tok) => {
-    const t = tok.toLowerCase()
-    if (!t) return false
-    for (const m of LANG_TAG_MATCHERS) if (m.re.test(t)) return false
-    return true
-  })
+  const kept = tokens.filter((tok) => !matchLangToken(tok))
   return kept.join(' ').toLowerCase()
 }
 

@@ -9,6 +9,7 @@ import * as jobs from '../lib/jobs.mjs'
 import { toolStatus, version, identify, run } from '../lib/mkv.mjs'
 import { parseChaptersXml, buildChaptersXml } from '../lib/chapters.mjs'
 import { detectSubCharset } from '../lib/subcharset.mjs'
+import { readLogs } from '../lib/applog.mjs'
 
 export function registerRoutes(router) {
   // ---------- 系统信息 ----------
@@ -83,6 +84,10 @@ export function registerRoutes(router) {
   // ---------- 任务 ----------
   router.add('GET', '/api/jobs', async ({ res }) => {
     json(res, 200, jobs.list())
+  })
+  // 一键清理已结束的任务记录（放在 :id 路由前注册）
+  router.add('POST', '/api/jobs/clear-finished', async ({ res }) => {
+    json(res, 200, { removed: jobs.clearFinished() })
   })
   router.add('POST', '/api/jobs', async ({ req, res, body }) => {
     const job = jobs.create({ name: body.name, tool: body.tool, argv: body.argv })
@@ -166,6 +171,12 @@ export function registerRoutes(router) {
       results[p] = file ? detectSubCharset(file, hint) : null
     }
     json(res, 200, { results })
+  })
+
+  // ---------- 运行日志 ----------
+  router.add('GET', '/api/logs', async ({ res, query }) => {
+    const tail = Math.max(1, Math.min(2000, Number(query.get('tail')) || 500))
+    json(res, 200, readLogs(tail))
   })
 
   // ---------- 兼容性占位 ----------
