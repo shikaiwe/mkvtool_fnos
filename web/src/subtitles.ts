@@ -71,6 +71,17 @@ export function guessLanguage(fileName: string): LangGuess | null {
   return null
 }
 
+// 找到文件名中的语言标记 token 并原样返回（如 chs、CHT&ENG、连写 jpsc），找不到返回 ''（改名时保留语言后缀用）
+export function langTokenOf(fileName: string): string {
+  const ext = extOf(fileName)
+  const base = ext ? fileName.slice(0, fileName.length - ext.length - 1) : fileName
+  const tokens = base.split(/[._\- [\]()]+/).filter(Boolean)
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    if (matchLangToken(tokens[i])) return tokens[i]
+  }
+  return ''
+}
+
 // 语言下拉框候选（沿用高级模式的常用语言）
 export const SUB_LANG_PRESETS = ['chi', 'zho', 'eng', 'jpn', 'kor', 'fre', 'ger', 'spa', 'rus', 'tha', 'por', 'ita', 'und']
 

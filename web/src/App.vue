@@ -11,6 +11,7 @@ const router = useRouter()
 const menuOptions = computed(() => [
   { label: i18n.global.t('menu.jobs'), key: '/jobs' },
   { label: i18n.global.t('menu.muxer'), key: '/muxer' },
+  { label: i18n.global.t('menu.subrename'), key: '/subrename' },
   { label: i18n.global.t('menu.extract'), key: '/extract' },
   { label: i18n.global.t('menu.propedit'), key: '/propedit' },
   { label: i18n.global.t('menu.info'), key: '/info' },

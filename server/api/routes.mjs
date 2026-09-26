@@ -173,6 +173,52 @@ export function registerRoutes(router) {
     json(res, 200, { results })
   })
 
+  // ---------- 字幕批量重命名 ----------
+  // 批量把字幕改名为匹配视频的文件名。items: [{ from, to }]，overwrite: 目标已存在时是否覆盖。
+  // 逐项容错返回每项结果；同批内目标路径互斥，防止前后两项把彼此的成果覆盖掉。
+  router.add('POST', '/api/subtitles/rename', async ({ res, body }) => {
+    const items = Array.isArray(body.items) ? body.items.slice(0, 500) : []
+    const overwrite = !!body.overwrite
+    const results = []
+    const claimed = new Set()
+    for (const item of items) {
+      const from = String(item?.from || '')
+      const to = String(item?.to || '')
+      const r = { from, to, ok: false, error: '' }
+      try {
+        const src = assertAllowed(from)
+        const dst = assertAllowed(to)
+        if (src === dst) throw Object.assign(new Error('same path'), { statusCode: 400 })
+        if (!fs.statSync(src).isFile()) throw Object.assign(new Error('not a file'), { statusCode: 400 })
+        if (fs.existsSync(dst) && fs.statSync(dst).isDirectory()) {
+          throw Object.assign(new Error('target is a directory'), { statusCode: 400 })
+        }
+        // 目标已存在：未开覆盖直接拒绝（Linux 的 rename 会静默替换，必须显式拦截）
+        if (!overwrite && fs.existsSync(dst)) {
+          throw Object.assign(new Error('target exists'), { statusCode: 409 })
+        }
+        if (claimed.has(dst)) throw Object.assign(new Error('duplicate target in batch'), { statusCode: 409 })
+        claimed.add(dst)
+        if (overwrite && fs.existsSync(dst)) {
+          // 仅大小写不同的场景（Windows/macOS 大小写不敏感盘）指向同一物理文件，先删会把源文件删掉
+          if (fs.realpathSync(src) !== fs.realpathSync(dst)) fs.rmSync(dst, { force: true })
+        }
+        try {
+          fs.renameSync(src, dst)
+        } catch (err) {
+          if (err.code !== 'EXDEV') throw err
+          fs.copyFileSync(src, dst)
+          fs.rmSync(src, { force: true })
+        }
+        r.ok = true
+      } catch (err) {
+        r.error = err.message
+      }
+      results.push(r)
+    }
+    json(res, 200, { results })
+  })
+
   // ---------- 运行日志 ----------
   router.add('GET', '/api/logs', async ({ res, query }) => {
     const tail = Math.max(1, Math.min(2000, Number(query.get('tail')) || 500))

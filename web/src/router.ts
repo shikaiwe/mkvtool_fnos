@@ -7,6 +7,7 @@ export const router = createRouter({
     { path: '/', redirect: '/jobs' },
     { path: '/jobs', component: () => import('./pages/JobsPage.vue') },
     { path: '/muxer', component: () => import('./pages/MuxerPage.vue') },
+    { path: '/subrename', component: () => import('./pages/SubRenamePage.vue') },
     { path: '/extract', component: () => import('./pages/ExtractPage.vue') },
     { path: '/propedit', component: () => import('./pages/PropEditPage.vue') },
     { path: '/info', component: () => import('./pages/InfoPage.vue') },

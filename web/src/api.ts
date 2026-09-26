@@ -69,6 +69,7 @@ export interface Identification {
 }
 export interface Chapter { start: string; end: string; title: string; language: string; startSec: number | null; endSec: number | null }
 export interface Edition { name: string; chapters: Chapter[] }
+export interface RenameResult { from: string; to: string; ok: boolean; error: string }
 export interface SystemInfo {
   app: { name: string; version: string; dev: boolean }
   node: string
@@ -100,6 +101,8 @@ export const api = {
   identify: (path: string) => request<Identification>('POST', '/api/identify', { path }),
   detectCharsets: (items: { path: string; hint?: string }[]) =>
     request<{ results: Record<string, string | null> }>('POST', '/api/subtitles/charset', { items }),
+  renameSubs: (items: { from: string; to: string }[], overwrite: boolean) =>
+    request<{ results: RenameResult[] }>('POST', '/api/subtitles/rename', { items, overwrite }),
   rawInfo: (path: string, verbose: number) =>
     request<{ exitCode: number; output: string }>('POST', '/api/info/raw', { path, verbose }),
   chaptersFromFile: (path: string) => request<{ editions: Edition[]; xml: string }>(
