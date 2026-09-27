@@ -237,11 +237,35 @@ export function cancel(id) {
   return job
 }
 
+// 一键取消：排队中的直接标记取消，运行中的请求终止（SIGTERM，10s 后 SIGKILL）
+export function cancelAll() {
+  const targets = [...jobs.values()].filter((j) => QUEUED_STATUSES.has(j.status))
+  for (const job of targets) {
+    if (job.status === 'queued') {
+      job.status = 'canceled'
+      job.finishedAt = Date.now()
+      addLog('info', 'job', `任务取消（排队中）: ${job.name}`, `id: ${job.id}`)
+      emitChange(job)
+    } else {
+      cancel(job.id)
+    }
+  }
+  if (targets.length) addLog('info', 'job', `一键取消任务 × ${targets.length}`)
+  return targets.length
+}
+
 export function retry(id) {
   const old = jobs.get(id)
   if (!old) throw Object.assign(new Error('job not found'), { statusCode: 404 })
   if (old.status === 'running' || old.status === 'queued') {
     throw Object.assign(new Error('job still active'), { statusCode: 400 })
+  }
+  // 防重复重试：完全相同的任务（工具+参数）已在排队/运行时拒绝，避免连点重试无限入队
+  const dup = [...jobs.values()].find(
+    (j) => QUEUED_STATUSES.has(j.status) && j.tool === old.tool && JSON.stringify(j.argv) === JSON.stringify(old.argv)
+  )
+  if (dup) {
+    throw Object.assign(new Error(`an identical job is already ${dup.status}`), { statusCode: 409 })
   }
   return create({ name: old.name, tool: old.tool, argv: old.argv })
 }
@@ -249,7 +273,8 @@ export function retry(id) {
 export function remove(id) {
   const job = jobs.get(id)
   if (!job) throw Object.assign(new Error('job not found'), { statusCode: 404 })
-  if (job.status === 'running' || job.status === 'queued') {
+  // 仅运行中不能直接删（进程还挂着，需先取消）；排队中尚未 spawn，直接删除即可，pump 不会再捞起
+  if (job.status === 'running') {
     throw Object.assign(new Error('cancel the job before removing'), { statusCode: 400 })
   }
   jobs.delete(id)

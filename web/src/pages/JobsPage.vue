@@ -16,6 +16,7 @@ const message = useMessage()
 
 const showLog = ref(false)
 const logJob = ref<Job | null>(null)
+const retryingId = ref('')
 
 const statusType = (s: Job['status']) =>
   (({
@@ -82,7 +83,11 @@ const columns = ref<DataTableColumns<Job>>([
               )
             : null,
           ['failed', 'canceled', 'interrupted', 'done'].includes(row.status)
-            ? h(NButton, { size: 'tiny', onClick: () => doRetry(row) }, { default: () => t('jobs.retry') })
+            ? h(
+                NButton,
+                { size: 'tiny', disabled: retryingId.value === row.id, onClick: () => doRetry(row) },
+                { default: () => t('jobs.retry') }
+              )
             : null,
           h(
             NPopconfirm,
@@ -101,12 +106,24 @@ async function doCancel(row: Job) {
     message.error(e.message)
   }
 }
+
+async function doCancelAll() {
+  try {
+    await api.cancelAllJobs()
+  } catch (e: any) {
+    message.error(e.message)
+  }
+}
 async function doRetry(row: Job) {
+  if (retryingId.value) return
+  retryingId.value = row.id
   try {
     await api.retryJob(row.id)
     message.success(t('jobs.newJob') + ' ok')
   } catch (e: any) {
     message.error(e.message)
+  } finally {
+    retryingId.value = ''
   }
 }
 async function doDelete(row: Job) {
@@ -138,6 +155,15 @@ const newJobOptions = [
   <NCard :title="$t('menu.jobs')" style="height: 100%">
     <template #header-extra>
       <NSpace>
+        <NPopconfirm @positive-click="doCancelAll">
+          <template #trigger>
+            <NButton
+              type="warning"
+              :disabled="!jobsState.jobs.some((j) => j.status === 'running' || j.status === 'queued')"
+            >{{ $t('jobs.cancelAll') }}</NButton>
+          </template>
+          {{ $t('jobs.cancelAllConfirm') }}
+        </NPopconfirm>
         <NPopconfirm @positive-click="doClearFinished">
           <template #trigger>
             <NButton

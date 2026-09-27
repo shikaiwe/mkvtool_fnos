@@ -3,7 +3,7 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NCard, NSpace, NButton, NInput, NInputNumber, NTag, NAlert, NTable, useMessage, useThemeVars,
+  NCard, NSpace, NButton, NInput, NInputNumber, NTag, NAlert, NTable, NPopconfirm, useMessage, useThemeVars,
 } from 'naive-ui'
 import { api, type Edition } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
@@ -103,11 +103,28 @@ async function copyPath() {
     message.warning(tempFile.value)
   }
 }
+
+// 一键清空：源文件、章节编辑与 XML 全部重置
+function clearAll() {
+  src.value = ''
+  editions.value = []
+  xmlInput.value = ''
+  xmlPreview.value = ''
+  tempFile.value = ''
+}
 </script>
 
 <template>
   <NSpace vertical size="large">
     <NCard :title="$t('chapters.title')">
+      <template #header-extra>
+        <NPopconfirm @positive-click="clearAll">
+          <template #trigger>
+            <NButton quaternary type="error" size="small">{{ $t('common.clearAll') }}</NButton>
+          </template>
+          {{ $t('common.clearAllConfirm') }}
+        </NPopconfirm>
+      </template>
       <NSpace vertical size="small">
         <NSpace>
           <NInput :value="src" readonly :placeholder="$t('chapters.needSource')" style="width: 420px" @click="browser = true">

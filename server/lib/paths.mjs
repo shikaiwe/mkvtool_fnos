@@ -11,8 +11,10 @@ export function allowedRoots() {
     seen.add(p)
     roots.push({ path: p, label })
   }
-  env.dataAccessiblePaths.forEach((p, i) => push(p, `authorized-${i + 1}`))
-  env.dataSharePaths.forEach((p, i) => push(p, `share-${i + 1}`))
+  // fnOS 授权/共享目录按末级目录名命名（/vol1/@team/films → films），比 authorized-1 直观
+  const leafOf = (p) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p
+  env.dataAccessiblePaths.forEach((p) => push(p, leafOf(p)))
+  env.dataSharePaths.forEach((p) => push(p, leafOf(p)))
   push(env.pkgVar, 'app-data')
   push(env.pkgTmp, 'app-tmp')
   push(env.pkgHome, 'app-home')

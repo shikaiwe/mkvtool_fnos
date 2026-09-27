@@ -6,7 +6,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NCard, NSpace, NButton, NInput, NSelect, NSwitch, NTag, NAlert, NCheckbox, NSpin,
-  NGrid, NGi, useMessage,
+  NGrid, NGi, NPopconfirm, useMessage,
 } from 'naive-ui'
 import { api, type Identification } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
@@ -195,6 +195,19 @@ function saveDraft() {
 }
 watch([videoPath, outDir, outName, segTitle, dropEmbedded, subs], saveDraft, { deep: true })
 
+// 一键清空：回到初始状态并清除本地草稿
+function clearAll() {
+  videoPath.value = ''
+  videoIdent.value = null
+  videoError.value = ''
+  subs.value = []
+  dropEmbedded.value = false
+  segTitle.value = ''
+  outDir.value = ''
+  outName.value = ''
+  localStorage.removeItem(DRAFT_KEY)
+}
+
 onMounted(async () => {
   try {
     const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null')
@@ -217,6 +230,14 @@ onMounted(async () => {
 <template>
   <NSpace vertical size="large">
     <NCard :title="$t('qsub.video')">
+      <template #header-extra>
+        <NPopconfirm @positive-click="clearAll">
+          <template #trigger>
+            <NButton quaternary type="error" size="small">{{ $t('common.clearAll') }}</NButton>
+          </template>
+          {{ $t('common.clearAllConfirm') }}
+        </NPopconfirm>
+      </template>
       <div style="display: flex; gap: 8px; align-items: center">
         <NInput
           :value="videoPath"

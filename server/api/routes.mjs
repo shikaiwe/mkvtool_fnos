@@ -94,6 +94,10 @@ export function registerRoutes(router) {
   router.add('POST', '/api/jobs/clear-finished', async ({ res }) => {
     json(res, 200, { removed: jobs.clearFinished() })
   })
+  // 一键取消全部进行中（运行/排队）的任务（放在 :id 路由前注册）
+  router.add('POST', '/api/jobs/cancel-all', async ({ res }) => {
+    json(res, 200, { canceled: jobs.cancelAll() })
+  })
   router.add('POST', '/api/jobs', async ({ req, res, body }) => {
     const job = jobs.create({ name: body.name, tool: body.tool, argv: body.argv })
     json(res, 201, job)

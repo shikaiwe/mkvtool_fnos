@@ -34,6 +34,8 @@ const zh = {
     size: '大小',
     modified: '修改时间',
     copied: '已复制',
+    clearAll: '一键清空',
+    clearAllConfirm: '将清空本页所有已填写的选项，确定？',
   },
   jobs: {
     name: '任务名',
@@ -60,6 +62,8 @@ const zh = {
     clearFinished: '清理已完成',
     clearFinishedConfirm: '将删除所有已结束任务（完成/失败/取消/中断）的记录与日志，进行中的任务不受影响。',
     cleared: '已清理 {n} 条任务记录',
+    cancelAll: '一键取消',
+    cancelAllConfirm: '将取消所有排队与运行中的任务，确定？',
   },
   logs: {
     autoRefresh: '自动刷新',
@@ -328,6 +332,8 @@ const en: typeof zh = {
     size: 'Size',
     modified: 'Modified',
     copied: 'Copied',
+    clearAll: 'Clear all',
+    clearAllConfirm: 'Clears every option filled in on this page. Continue?',
   },
   jobs: {
     name: 'Name',
@@ -354,6 +360,8 @@ const en: typeof zh = {
     clearFinished: 'Clear finished',
     clearFinishedConfirm: 'Removes records and logs of all finished jobs (done/failed/canceled/interrupted). Running and queued jobs are kept.',
     cleared: '{n} job record(s) cleared',
+    cancelAll: 'Cancel all',
+    cancelAllConfirm: 'Cancels all queued and running jobs. Continue?',
   },
   logs: {
     autoRefresh: 'Auto refresh',

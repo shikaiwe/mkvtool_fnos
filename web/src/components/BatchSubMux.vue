@@ -4,7 +4,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NCard, NSpace, NButton, NInput, NCheckbox, NAlert, NTable, NSpin, NGrid, NGi, NSelect, NSwitch, useMessage,
+  NCard, NSpace, NButton, NInput, NCheckbox, NAlert, NTable, NSpin, NGrid, NGi, NSelect, NSwitch, NPopconfirm, useMessage,
 } from 'naive-ui'
 import { api, type FileEntry } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
@@ -193,11 +193,33 @@ function saveDraft() {
   )
 }
 watch([videoDir, subDir, outDir, outSuffix, dropEmbedded], saveDraft)
+
+// 一键清空：回到初始状态并清除本地草稿
+function clearAll() {
+  videoDir.value = ''
+  subDir.value = ''
+  outDir.value = ''
+  outSuffix.value = '.subs'
+  dropEmbedded.value = false
+  rows.value = []
+  unmatchedVideos.value = []
+  unmatchedSubs.value = []
+  scanned.value = false
+  localStorage.removeItem(DRAFT_KEY)
+}
 </script>
 
 <template>
   <NSpace vertical size="large">
     <NCard :title="$t('bsub.dirs')">
+      <template #header-extra>
+        <NPopconfirm @positive-click="clearAll">
+          <template #trigger>
+            <NButton quaternary type="error" size="small">{{ $t('common.clearAll') }}</NButton>
+          </template>
+          {{ $t('common.clearAllConfirm') }}
+        </NPopconfirm>
+      </template>
       <NGrid :cols="3" :x-gap="12" :y-gap="12">
         <NGi>
           <div class="field-label">{{ $t('bsub.videoDir') }}</div>

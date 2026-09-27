@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NCard, NSpace, NButton, NInput, NInputNumber, NSelect, NTag, NTable, useMessage } from 'naive-ui'
+import { NCard, NSpace, NButton, NInput, NInputNumber, NSelect, NTag, NTable, NPopconfirm, useMessage } from 'naive-ui'
 import { api, type Settings, type SystemInfo } from '../api'
 
 const { t, locale } = useI18n()
@@ -46,12 +46,28 @@ async function save() {
   }
 }
 
+// 一键清空：表单恢复默认值（点保存后才写入服务端）
+function clearAll() {
+  concurrency.value = 2
+  binDir.value = ''
+  defaultOutputDir.value = ''
+  uiLanguage.value = 'zh-CN'
+}
+
 onMounted(load)
 </script>
 
 <template>
   <NSpace vertical size="large">
     <NCard :title="$t('settings.title')">
+      <template #header-extra>
+        <NPopconfirm @positive-click="clearAll">
+          <template #trigger>
+            <NButton quaternary type="error" size="small">{{ $t('common.clearAll') }}</NButton>
+          </template>
+          {{ $t('common.clearAllConfirm') }}
+        </NPopconfirm>
+      </template>
       <NSpace vertical size="small">
         <div style="display: flex; gap: 8px; align-items: center">
           <span style="width: 340px; font-size: 13px">{{ $t('settings.concurrency') }}</span>

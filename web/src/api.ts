@@ -95,6 +95,7 @@ export const api = {
   createJob: (payload: { name: string; tool: string; argv: string[] }) =>
     request<Job>('POST', '/api/jobs', payload),
   cancelJob: (id: string) => request<Job>('POST', `/api/jobs/${id}/cancel`),
+  cancelAllJobs: () => request<{ canceled: number }>('POST', '/api/jobs/cancel-all'),
   retryJob: (id: string) => request<Job>('POST', `/api/jobs/${id}/retry`),
   deleteJob: (id: string) => request<{ removed: boolean }>('DELETE', `/api/jobs/${id}`),
   clearFinishedJobs: () => request<{ removed: number }>('POST', '/api/jobs/clear-finished'),

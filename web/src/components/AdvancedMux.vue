@@ -8,6 +8,10 @@ import {
 } from 'naive-ui'
 import { api, tokenizeArgs, type Identification } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
+import {
+  defaultOutputFor, extOf, guessLanguage, SUB_CHARSETS,
+  SUBTITLE_EXTENSIONS, TEXT_SUBTITLE_EXTENSIONS,
+} from '../subtitles'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -23,9 +27,11 @@ interface UITrack {
   isForced: boolean
   isCommentary: boolean
   delay: number | null
+  charset: string // 仅外挂文本字幕源有意义，'' = 不指定
 }
 interface Source {
   path: string
+  isExternalSub: boolean
   loading: boolean
   error: string
   ident: Identification | null
@@ -65,6 +71,9 @@ const langOptions = (current: string) => [
   .filter((v, i, a) => v && a.indexOf(v) === i)
   .map((v) => ({ label: v, value: v }))
 
+const charsetOptions = (current: string) =>
+  [...new Set([current, ...SUB_CHARSETS])].filter(Boolean).map((v) => ({ label: v, value: v }))
+
 function openBrowser(mode: 'file' | 'dir', target: typeof browserTarget, index = -1) {
   browserMode.value = mode
   browserTarget = target
@@ -84,31 +93,110 @@ function identifyTrackProperties(
   }
 }
 
-async function onBrowserSelect(p: string) {
+function onBrowserSelect(p: string) {
   const target = browserTarget
   browserTarget = null
   if (!target) return
   if (target === 'outDir') outDir.value = p
   else if (target === 'chapters') chaptersFile.value = p
-  else if (target === 'attach') attachments.value.push({ path: p, name: p.split(/[\\/]/).pop() || '' })
-  else if (target === 'src') {
-    const src: Source = { path: p, loading: true, error: '', ident: null, keepChapters: true, tracks: [] }
-    sources.value.push(src)
-    try {
-      src.ident = await api.identify(p)
-      src.tracks = src.ident.tracks.map((tr) => ({
-        id: tr.id,
-        type: tr.type,
-        codec: tr.codec,
-        enabled: true,
-        ...identifyTrackProperties(tr.properties),
-        delay: null,
-      }))
-    } catch (e: any) {
-      src.error = e.message
-    } finally {
-      src.loading = false
+  else if (target === 'attach') addAttachments([p])
+  else if (target === 'src') addSources([p])
+}
+
+function onBrowserSelectMulti(paths: string[]) {
+  const target = browserTarget
+  browserTarget = null
+  if (!target) return
+  if (target === 'src') addSources(paths)
+  else if (target === 'attach') addAttachments(paths)
+}
+
+function addAttachments(paths: string[]) {
+  for (const p of paths) attachments.value.push({ path: p, name: p.split(/[\\/]/).pop() || '' })
+}
+
+function mkSource(p: string): Source {
+  return {
+    path: p,
+    isExternalSub: SUBTITLE_EXTENSIONS.has(extOf(p)),
+    loading: true,
+    error: '',
+    ident: null,
+    keepChapters: true,
+    tracks: [],
+  }
+}
+
+async function addSources(paths: string[]) {
+  const existing = new Set(sources.value.map((s) => s.path))
+  const fresh = paths.filter((p) => !existing.has(p))
+  if (!fresh.length) return
+  // 输出目录自动填写：新任务的第一个输入文件所在目录（与快速内封一致）
+  if (sources.value.length === 0 || !outDir.value) {
+    outDir.value = defaultOutputFor(fresh[0]).dir
+  }
+  for (const p of fresh) {
+    sources.value.push(mkSource(p))
+  }
+  // 之后一切赋值都要走 sources.value 里的响应式代理，改 raw 对象不会触发更新
+  const rows = sources.value.slice(sources.value.length - fresh.length)
+  await Promise.all(rows.map((row) => identifySource(row)))
+  await detectSubCharsets(rows)
+}
+
+async function identifySource(row: Source) {
+  try {
+    row.ident = await api.identify(row.path)
+    row.tracks = row.ident.tracks.map((tr) => ({
+      id: tr.id,
+      type: tr.type,
+      codec: tr.codec,
+      enabled: true,
+      ...identifyTrackProperties(tr.properties),
+      delay: null,
+      charset: '',
+    }))
+    // 外挂字幕源 mkvmerge -J 只报 und/空名，语言与轨道名按文件名规则猜（与快速内封一致）
+    if (row.isExternalSub) {
+      const g = guessLanguage(row.path.split(/[\\/]/).pop() || row.path)
+      if (g) {
+        for (const tr of row.tracks) {
+          if (tr.type === 'subtitles') {
+            tr.lang = g.lang
+            tr.name = g.name
+          }
+        }
+      }
     }
+  } catch (e: any) {
+    row.error = e.message
+  } finally {
+    row.loading = false
+  }
+}
+
+// 外挂文本字幕批量字符集检测（GBK/Big5 等防乱码），已有字符集的不覆盖
+async function detectSubCharsets(rows: Source[]) {
+  const targets: { row: Source; tr: UITrack }[] = []
+  for (const row of rows) {
+    if (!TEXT_SUBTITLE_EXTENSIONS.has(extOf(row.path))) continue
+    for (const tr of row.tracks) {
+      if (tr.type === 'subtitles' && !tr.charset) targets.push({ row, tr })
+    }
+  }
+  if (!targets.length) return
+  try {
+    const items = targets.map(({ row }) => ({
+      path: row.path,
+      hint: guessLanguage(row.path.split(/[\\/]/).pop() || row.path)?.hint || '',
+    }))
+    const { results } = await api.detectCharsets(items)
+    for (const { row, tr } of targets) {
+      const cs = results[row.path]
+      if (cs) tr.charset = cs
+    }
+  } catch {
+    /* 检测失败则不指定字符集 */
   }
 }
 
@@ -139,6 +227,7 @@ const argv = computed<string[]>(() => {
     for (const tr of src.tracks.filter((x) => x.enabled)) {
       if (tr.name) args.push('--track-name', `${tr.id}:${tr.name}`)
       if (tr.lang) args.push('--language', `${tr.id}:${tr.lang}`)
+      if (tr.type === 'subtitles' && tr.charset) args.push('--sub-charset', `${tr.id}:${tr.charset}`)
       args.push('--default-track-flag', `${tr.id}:${tr.isDefault ? 1 : 0}`)
       if (tr.isForced) args.push('--forced-display-flag', `${tr.id}:1`)
       if (tr.isCommentary) args.push('--commentary-flag', `${tr.id}:1`)
@@ -182,28 +271,48 @@ async function submit() {
   }
 }
 
-// 草稿持久化（不含输入文件识别结果）
+// 草稿持久化：选项 + 输入文件/附件/轨道编辑（识别结果不存，恢复时重新识别回填）
+const DRAFT_KEY = 'mkv.muxer'
+
+function saveDraft() {
+  localStorage.setItem(
+    DRAFT_KEY,
+    JSON.stringify({
+      outDir: outDir.value,
+      outName: outName.value,
+      segTitle: segTitle.value,
+      splitMode: splitMode.value,
+      splitValue: splitValue.value,
+      chaptersFile: chaptersFile.value,
+      extraArgs: extraArgs.value,
+      attachments: attachments.value,
+      sources: sources.value.map((s) => ({
+        path: s.path,
+        keepChapters: s.keepChapters,
+        tracks: s.tracks.map((tr) => ({
+          id: tr.id,
+          enabled: tr.enabled,
+          name: tr.name,
+          lang: tr.lang,
+          isDefault: tr.isDefault,
+          isForced: tr.isForced,
+          isCommentary: tr.isCommentary,
+          delay: tr.delay,
+          charset: tr.charset,
+        })),
+      })),
+    })
+  )
+}
 watch(
-  [outDir, outName, segTitle, splitMode, splitValue, chaptersFile],
-  () => {
-    localStorage.setItem(
-      'mkv.muxer',
-      JSON.stringify({
-        outDir: outDir.value,
-        outName: outName.value,
-        segTitle: segTitle.value,
-        splitMode: splitMode.value,
-        splitValue: splitValue.value,
-        chaptersFile: chaptersFile.value,
-      })
-    )
-  },
+  [outDir, outName, segTitle, splitMode, splitValue, chaptersFile, extraArgs, sources, attachments],
+  saveDraft,
   { deep: true }
 )
 
 onMounted(async () => {
   try {
-    const draft = JSON.parse(localStorage.getItem('mkv.muxer') || 'null')
+    const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null')
     if (draft) {
       outDir.value = draft.outDir || ''
       outName.value = draft.outName || ''
@@ -211,6 +320,11 @@ onMounted(async () => {
       splitMode.value = draft.splitMode || 'none'
       splitValue.value = draft.splitValue || ''
       chaptersFile.value = draft.chaptersFile || ''
+      extraArgs.value = draft.extraArgs || ''
+      if (Array.isArray(draft.attachments)) {
+        attachments.value = draft.attachments.filter((a: any) => a && typeof a.path === 'string' && a.path)
+      }
+      if (Array.isArray(draft.sources)) await restoreSources(draft.sources)
     }
     if (!outDir.value) {
       const s = await api.settings()
@@ -220,11 +334,63 @@ onMounted(async () => {
     /* ignore */
   }
 })
+
+// 恢复输入文件：重新识别后按轨道 id 回填保存的编辑；文件已不存在则显示识别失败
+async function restoreSources(saved: any[]) {
+  const valid = saved.filter((s) => s && typeof s.path === 'string' && s.path)
+  for (const s of valid) {
+    const row = mkSource(s.path)
+    row.keepChapters = s.keepChapters !== false
+    sources.value.push(row)
+  }
+  const rows = sources.value.slice(sources.value.length - valid.length)
+  await Promise.all(
+    rows.map(async (row, i) => {
+      await identifySource(row)
+      const savedTracks = Array.isArray(valid[i].tracks) ? valid[i].tracks : []
+      for (const tr of row.tracks) {
+        const st = savedTracks.find((x: any) => x && x.id === tr.id)
+        if (!st) continue
+        tr.enabled = st.enabled !== false
+        if (typeof st.name === 'string' && st.name) tr.name = st.name
+        if (typeof st.lang === 'string' && st.lang) tr.lang = st.lang
+        tr.isDefault = !!st.isDefault
+        tr.isForced = !!st.isForced
+        tr.isCommentary = !!st.isCommentary
+        if (typeof st.delay === 'number') tr.delay = st.delay
+        if (typeof st.charset === 'string' && st.charset) tr.charset = st.charset
+      }
+    })
+  )
+  await detectSubCharsets(rows)
+}
+
+// 一键清空：回到初始状态并清除本地草稿
+function clearAll() {
+  outDir.value = ''
+  outName.value = ''
+  segTitle.value = ''
+  splitMode.value = 'none'
+  splitValue.value = ''
+  chaptersFile.value = ''
+  sources.value = []
+  attachments.value = []
+  extraArgs.value = ''
+  localStorage.removeItem(DRAFT_KEY)
+}
 </script>
 
 <template>
   <NSpace vertical size="large">
     <NCard :title="$t('muxer.output')">
+      <template #header-extra>
+        <NPopconfirm @positive-click="clearAll">
+          <template #trigger>
+            <NButton quaternary type="error" size="small">{{ $t('common.clearAll') }}</NButton>
+          </template>
+          {{ $t('common.clearAllConfirm') }}
+        </NPopconfirm>
+      </template>
       <NGrid :cols="2" :x-gap="12" :y-gap="12">
         <NGi>
           <div style="margin-bottom: 4px; font-size: 13px; opacity: 0.7">{{ $t('muxer.outputDir') }}</div>
@@ -271,6 +437,7 @@ onMounted(async () => {
                 <th style="width: 120px">{{ $t('muxer.trackCodec') }}</th>
                 <th>{{ $t('muxer.trackName') }}</th>
                 <th style="width: 110px">{{ $t('muxer.trackLang') }}</th>
+                <th v-if="src.isExternalSub" style="width: 120px">{{ $t('qsub.charset') }}</th>
                 <th style="width: 60px">{{ $t('muxer.trackDefault') }}</th>
                 <th style="width: 60px">{{ $t('muxer.trackForced') }}</th>
                 <th style="width: 70px">{{ $t('muxer.trackCommentary') }}</th>
@@ -291,6 +458,19 @@ onMounted(async () => {
                     tag
                     filterable
                     :options="langOptions(tr.lang)"
+                  />
+                </td>
+                <td v-if="src.isExternalSub">
+                  <NSelect
+                    v-if="tr.type === 'subtitles'"
+                    :value="tr.charset || null"
+                    size="tiny"
+                    tag
+                    filterable
+                    clearable
+                    :placeholder="$t('qsub.charsetNone')"
+                    :options="charsetOptions(tr.charset)"
+                    @update:value="(v: string | null) => (tr.charset = v || '')"
                   />
                 </td>
                 <td><NSwitch v-model:value="tr.isDefault" size="small" /></td>
@@ -367,8 +547,10 @@ onMounted(async () => {
     <FileBrowser
       v-model:show="browser"
       :mode="browserMode"
+      :multi="browserTarget === 'src' || browserTarget === 'attach'"
       filter="media"
       @select="onBrowserSelect"
+      @select-multi="onBrowserSelectMulti"
     />
   </NSpace>
 </template>

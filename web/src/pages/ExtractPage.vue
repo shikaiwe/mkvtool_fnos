@@ -3,7 +3,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NCard, NSpace, NButton, NInput, NCheckbox, NTag, NAlert, NTable, NInputNumber, useMessage,
+  NCard, NSpace, NButton, NInput, NCheckbox, NTag, NAlert, NTable, NInputNumber, NPopconfirm, useMessage,
 } from 'naive-ui'
 import { api, fmtSize, type Identification } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
@@ -151,11 +151,35 @@ onMounted(async () => {
     /* ignore */
   }
 })
+
+// 一键清空：回到初始状态（源/输出目录/勾选全部重置）
+function clearAll() {
+  src.value = ''
+  outDir.value = ''
+  ident.value = null
+  trackSel.value = {}
+  trackOut.value = {}
+  attachSel.value = {}
+  tsSel.value = {}
+  wantChapters.value = false
+  chaptersSimple.value = false
+  wantTags.value = false
+  wantCuesheet.value = false
+  wantCues.value = false
+}
 </script>
 
 <template>
   <NSpace vertical size="large">
     <NCard :title="$t('extract.title')">
+      <template #header-extra>
+        <NPopconfirm @positive-click="clearAll">
+          <template #trigger>
+            <NButton quaternary type="error" size="small">{{ $t('common.clearAll') }}</NButton>
+          </template>
+          {{ $t('common.clearAllConfirm') }}
+        </NPopconfirm>
+      </template>
       <NSpace vertical size="small">
         <div style="display: flex; gap: 8px; align-items: center">
           <NTag size="small">{{ $t('extract.source') }}</NTag>

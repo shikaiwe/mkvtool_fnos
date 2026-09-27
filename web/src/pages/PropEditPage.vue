@@ -3,7 +3,7 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NCard, NSpace, NButton, NInput, NSwitch, NTag, NAlert, NTable, NInputNumber, useMessage,
+  NCard, NSpace, NButton, NInput, NSwitch, NTag, NAlert, NTable, NInputNumber, NPopconfirm, useMessage,
 } from 'naive-ui'
 import { api, type Identification } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
@@ -72,6 +72,19 @@ function onBrowserSelect(p: string) {
   else if (browserFor.value === 'attach') attachAddPath.value = p
 }
 
+// 一键清空：源文件与全部待写入的属性编辑重置
+function clearAll() {
+  src.value = ''
+  ident.value = null
+  tracks.value = []
+  segTitle.value = ''
+  segDate.value = ''
+  chaptersFile.value = ''
+  attachAddPath.value = ''
+  attachAddName.value = ''
+  attachDelete.value = ''
+}
+
 const argv = computed<string[]>(() => {
   if (!src.value) return []
   const args: string[] = []
@@ -136,6 +149,14 @@ async function submit() {
 <template>
   <NSpace vertical size="large">
     <NCard :title="$t('propedit.title')">
+      <template #header-extra>
+        <NPopconfirm @positive-click="clearAll">
+          <template #trigger>
+            <NButton quaternary type="error" size="small">{{ $t('common.clearAll') }}</NButton>
+          </template>
+          {{ $t('common.clearAllConfirm') }}
+        </NPopconfirm>
+      </template>
       <NSpace vertical size="small">
         <NAlert type="warning" :show-icon="false">{{ $t('propedit.inPlace') }}</NAlert>
         <NSpace>

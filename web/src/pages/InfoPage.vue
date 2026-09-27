@@ -3,7 +3,7 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NCard, NSpace, NButton, NInput, NTag, NTable, NTabs, NTabPane, NAlert, NSelect, NSpin, useMessage, useThemeVars,
+  NCard, NSpace, NButton, NInput, NTag, NTable, NTabs, NTabPane, NAlert, NSelect, NSpin, NPopconfirm, useMessage, useThemeVars,
 } from 'naive-ui'
 import { api, fmtSize, type Identification } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
@@ -49,6 +49,13 @@ async function loadRaw() {
   }
 }
 
+// 一键清空：回到未选文件状态
+function clearAll() {
+  src.value = ''
+  ident.value = null
+  raw.value = ''
+}
+
 function containerProps() {
   const p = ident.value?.container?.properties || {}
   const rows: [string, string][] = []
@@ -76,6 +83,14 @@ function trackPropRows(tr: any): [string, string][] {
 <template>
   <NSpace vertical size="large">
     <NCard :title="$t('info.title')">
+      <template #header-extra>
+        <NPopconfirm @positive-click="clearAll">
+          <template #trigger>
+            <NButton quaternary type="error" size="small">{{ $t('common.clearAll') }}</NButton>
+          </template>
+          {{ $t('common.clearAllConfirm') }}
+        </NPopconfirm>
+      </template>
       <NSpace>
         <NInput :value="src" readonly :placeholder="$t('info.noFile')" style="width: 480px" @click="browser = true">
           <template #suffix>

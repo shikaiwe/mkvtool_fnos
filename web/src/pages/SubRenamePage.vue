@@ -339,6 +339,21 @@ function saveDraft() {
 }
 watch([videoDir, subDir, keepLang, addSuffix, moveToVideo, overwrite], saveDraft)
 
+// 一键清空：回到初始状态并清除本地草稿
+function clearAll() {
+  videoDir.value = ''
+  subDir.value = ''
+  keepLang.value = true
+  addSuffix.value = ''
+  moveToVideo.value = false
+  overwrite.value = false
+  videos.value = []
+  rows.value = []
+  unmatchedVideos.value = []
+  scanned.value = false
+  localStorage.removeItem(DRAFT_KEY)
+}
+
 // 切换"保留语言标记"/"添加语言后缀"（两者互斥，后选的生效）：重算未手改名字的行
 function recomputeDerivedNames() {
   for (const r of rows.value) {
@@ -363,6 +378,14 @@ watch(moveToVideo, refreshStatuses)
 <template>
   <NSpace vertical size="large">
     <NCard :title="$t('srn.dirs')">
+      <template #header-extra>
+        <NPopconfirm @positive-click="clearAll">
+          <template #trigger>
+            <NButton quaternary type="error" size="small">{{ $t('common.clearAll') }}</NButton>
+          </template>
+          {{ $t('common.clearAllConfirm') }}
+        </NPopconfirm>
+      </template>
       <NGrid :cols="2" :x-gap="12" :y-gap="12">
         <NGi>
           <div class="field-label">{{ $t('srn.videoDir') }}</div>
