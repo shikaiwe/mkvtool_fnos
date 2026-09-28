@@ -10,7 +10,7 @@ import {
 } from 'naive-ui'
 import { api, type FileEntry, type RenameResult } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
-import { extOf, langTokenOf, pairVideos, pairingKey, LANG_SUFFIX_PRESETS, SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS } from '../subtitles'
+import { extOf, langTokenOf, pairVideos, pairingKey, distinguishingSuffix, LANG_SUFFIX_PRESETS, SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS } from '../subtitles'
 
 const { t } = useI18n()
 const message = useMessage()
@@ -135,14 +135,58 @@ function touch(r: RenameRow) {
   refreshStatuses()
 }
 
+// 重算所有未手改、未落盘的行的新名，并消解「多字幕对应一个视频」导致的同目录重名。
+// 手改过名字（nameEdited）或已落盘（done/failed）的行不动。
+function rederiveAuto() {
+  for (const r of rows.value) {
+    if (r.nameEdited || r.status === 'done' || r.status === 'failed') continue
+    const ve = videos.value.find((x) => x.path === r.videoPath)
+    r.newName = ve ? deriveName(ve.name, r.sub.name) : ''
+  }
+  disambiguate()
+  refreshStatuses()
+}
+
+// 同一目标目录下新名相同的自动行：先追加描述性区分后缀，仍重名再用数字后缀，保证可落盘。
+function disambiguate() {
+  const auto = rows.value.filter(
+    (r) => !r.nameEdited && r.status !== 'done' && r.status !== 'failed' && r.newName.trim() && r.videoPath
+  )
+  const groups = new Map<string, RenameRow[]>()
+  for (const r of auto) {
+    const key = targetDirFor(r) + '\u0000' + r.newName.trim()
+    const list = groups.get(key)
+    if (list) list.push(r)
+    else groups.set(key, [r])
+  }
+  for (const list of groups.values()) {
+    if (list.length < 2) continue
+    for (const r of list) {
+      const ve = videos.value.find((x) => x.path === r.videoPath)
+      const d = ve ? distinguishingSuffix(ve.name, r.sub.name) : ''
+      if (!d) continue
+      const ext = rawExt(r.newName)
+      r.newName = baseOf(r.newName) + '.' + d + (ext ? '.' + ext : '')
+    }
+    // 区分后缀为空或恰好相同时的兜底：同名者依次追加序号
+    const seen = new Map<string, number>()
+    for (const r of list) {
+      const to = targetPathFor(r)
+      const n = seen.get(to) || 0
+      if (n > 0) {
+        const ext = rawExt(r.newName)
+        r.newName = baseOf(r.newName) + '.' + (n + 1) + (ext ? '.' + ext : '')
+      }
+      seen.set(to, n + 1)
+    }
+  }
+}
+
 function onVideoChange(r: RenameRow, v: string | null) {
   r.videoPath = v || ''
-  const ve = videos.value.find((x) => x.path === r.videoPath)
-  if (ve) {
-    r.newName = deriveName(ve.name, r.sub.name)
-    r.nameEdited = false
-  }
-  touch(r)
+  r.nameEdited = false
+  if (r.status === 'done' || r.status === 'failed') r.status = 'ready'
+  rederiveAuto()
 }
 
 function onNameInput(r: RenameRow, v: string) {
@@ -204,7 +248,7 @@ async function scan() {
     rows.value = newRows
     unmatchedVideos.value = pr.unmatchedVideos
     scanned.value = true
-    refreshStatuses()
+    rederiveAuto()
   } catch (e: any) {
     message.error(e.message)
   } finally {
@@ -356,12 +400,7 @@ function clearAll() {
 
 // 切换"保留语言标记"/"添加语言后缀"（两者互斥，后选的生效）：重算未手改名字的行
 function recomputeDerivedNames() {
-  for (const r of rows.value) {
-    if (r.nameEdited || r.status === 'done' || r.status === 'failed') continue
-    const ve = videos.value.find((x) => x.path === r.videoPath)
-    if (ve) r.newName = deriveName(ve.name, r.sub.name)
-  }
-  refreshStatuses()
+  rederiveAuto()
 }
 watch(keepLang, (v) => {
   if (v && addSuffix.value) addSuffix.value = ''
@@ -371,8 +410,8 @@ watch(addSuffix, (v) => {
   if (v && keepLang.value) keepLang.value = false
   recomputeDerivedNames()
 })
-// 切换"移动到视频目录"：目标目录变化，重算 same/冲突
-watch(moveToVideo, refreshStatuses)
+// 切换"移动到视频目录"：目标目录变化，重算 same/冲突与重名区分
+watch(moveToVideo, rederiveAuto)
 </script>
 
 <template>

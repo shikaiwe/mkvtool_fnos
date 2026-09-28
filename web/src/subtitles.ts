@@ -2,12 +2,14 @@
 import type { FileEntry } from './api'
 
 export const VIDEO_EXTENSIONS = new Set([
-  'mkv', 'mka', 'mks', 'mk3d', 'webm',
+  'mkv', 'mks', 'mk3d', 'webm',
   'mp4', 'm4v', 'mov', 'ts', 'm2ts', 'mts', 'avi', 'flv', 'ogv',
 ])
 export const SUBTITLE_EXTENSIONS = new Set(['srt', 'ass', 'ssa', 'sub', 'sup', 'vtt', 'idx', 'smi'])
 // 需要字符集处理的文本字幕（.sup/.idx 为二进制形态无需处理）
 export const TEXT_SUBTITLE_EXTENSIONS = new Set(['srt', 'ass', 'ssa', 'sub', 'vtt', 'smi'])
+// 外挂音频（无损/常见几种）：mka 是纯音频容器（原误列为视频输入），一并按文件名与视频配对
+export const AUDIO_EXTENSIONS = new Set(['mka', 'flac', 'ac3', 'eac3', 'dts', 'dtshd', 'truehd', 'thd', 'aac'])
 
 export interface LangGuess {
   lang: string
@@ -127,6 +129,16 @@ export interface SubRow {
   charset: string // '' = 不指定
 }
 
+// 外挂音轨行：无字符集/强制，改为评论轨标记
+export interface AudioRow {
+  path: string
+  fileName: string
+  lang: string
+  trackName: string
+  isDefault: boolean
+  isCommentary: boolean
+}
+
 export function guessTrackName(fileName: string): string {
   return guessLanguage(fileName)?.name || ''
 }
@@ -158,9 +170,25 @@ export function pairingKey(fileName: string): string {
   return kept.join(' ').toLowerCase()
 }
 
+// 一个视频匹配到多个字幕、改名后目标同名时的区分后缀：
+// 取字幕名去扩展名后、位于视频配对键之后、且非语言标记的描述性 token（如发布组风格的 CASO.subset、
+// Hitagi&Suruga.CM.subset），用 . 连接。描述 token 与视频完全一致（仅语言标记不同）时退回语言标记。
+export function distinguishingSuffix(videoName: string, subName: string): string {
+  const vKey = pairingKey(videoName)
+  const vTokens = vKey ? vKey.split(' ') : []
+  const ext = extOf(subName)
+  const base = ext ? subName.slice(0, subName.length - ext.length - 1) : subName
+  const descriptors = base.split(/[._\- [\]()]+/).filter(Boolean).filter((tok) => !matchLangToken(tok))
+  let i = 0
+  while (i < descriptors.length && i < vTokens.length && descriptors[i].toLowerCase() === vTokens[i]) i++
+  const rem = descriptors.slice(i).join('.')
+  return rem || langTokenOf(subName)
+}
+
 export interface PairRow {
   video: FileEntry
   subs: FileEntry[]
+  audios: FileEntry[]
   outName: string
 }
 
@@ -168,6 +196,7 @@ export interface PairResult {
   rows: PairRow[]
   unmatchedVideos: FileEntry[]
   unmatchedSubs: FileEntry[]
+  unmatchedAudios: FileEntry[]
 }
 
 // 前缀必须止于词边界（"s01e01" 不能匹配 "s01e010"，但能匹配 "s01e01 fix"）
@@ -178,58 +207,82 @@ function isTokenPrefix(prefix: string, full: string): boolean {
   return /^[\s_-]/.test(rest)
 }
 
-export function pairVideos(videos: FileEntry[], subs: FileEntry[], suffix = '.subs'): PairResult {
+// 把外挂文件按配对键分组
+function groupByKey(files: FileEntry[]): Map<string, FileEntry[]> {
+  const map = new Map<string, FileEntry[]>()
+  for (const f of files) {
+    const k = pairingKey(f.name)
+    const list = map.get(k) || []
+    list.push(f)
+    map.set(k, list)
+  }
+  return map
+}
+
+// 把一批外挂文件组配到视频：
+// 1) 先精确 key 匹配；2) 再按视频 key 从长到短（最具体优先）遍历所有视频，
+// 吸纳所有未被占用、且与视频 key 互为词边界前缀的组（一个视频可收多组，修复"两个字幕只显示一个"）。
+function assignGroups(
+  videos: FileEntry[],
+  groups: Map<string, FileEntry[]>
+): { byVideo: Map<string, FileEntry[]>; consumed: Set<string> } {
+  const byVideo = new Map<string, FileEntry[]>()
+  const consumed = new Set<string>()
+  const add = (v: FileEntry, key: string) => {
+    const list = byVideo.get(v.path) || []
+    list.push(...groups.get(key)!)
+    byVideo.set(v.path, list)
+    consumed.add(key)
+  }
+
+  for (const v of videos) {
+    const key = pairingKey(v.name)
+    if (groups.has(key) && !consumed.has(key)) add(v, key)
+  }
+  const byLenDesc = [...videos].sort((a, b) => pairingKey(b.name).length - pairingKey(a.name).length)
+  for (const v of byLenDesc) {
+    const key = pairingKey(v.name)
+    for (const k of groups.keys()) {
+      if (consumed.has(k)) continue
+      if (isTokenPrefix(key, k) || isTokenPrefix(k, key)) add(v, k)
+    }
+  }
+  for (const list of byVideo.values()) {
+    list.sort((a, b) => subSortScore(a.name) - subSortScore(b.name) || a.name.localeCompare(b.name))
+  }
+  return { byVideo, consumed }
+}
+
+export function pairVideos(
+  videos: FileEntry[],
+  subs: FileEntry[],
+  suffix = '.subs',
+  audios: FileEntry[] = []
+): PairResult {
   // VobSub 成对文件（.idx+.sub）：存在 .idx 时剔除同键的 .sub（二进制伴生文件，不能混入）
   const idxKeys = new Set(subs.filter((s) => extOf(s.name) === 'idx').map((s) => pairingKey(s.name)))
   const usableSubs = subs.filter((s) => extOf(s.name) !== 'sub' || !idxKeys.has(pairingKey(s.name)))
 
-  const subMap = new Map<string, FileEntry[]>()
-  for (const s of usableSubs) {
-    const k = pairingKey(s.name)
-    const list = subMap.get(k) || []
-    list.push(s)
-    subMap.set(k, list)
-  }
-  for (const list of subMap.values()) {
-    list.sort((a, b) => subSortScore(a.name) - subSortScore(b.name) || a.name.localeCompare(b.name))
-  }
+  const subGroups = groupByKey(usableSubs)
+  const audioGroups = groupByKey(audios)
+  const subAssign = assignGroups(videos, subGroups)
+  const audioAssign = assignGroups(videos, audioGroups)
 
   const rows: PairRow[] = []
   const unmatchedVideos: FileEntry[] = []
-  const matchedVideos = new Set<string>()
-  const consumedKeys = new Set<string>()
-
-  const take = (v: FileEntry, key: string) => {
-    matchedVideos.add(v.path)
-    consumedKeys.add(key)
-    rows.push({ video: v, subs: subMap.get(key)!, outName: defaultOutputFor(v.path, suffix).name })
-  }
-
-  // 两轮配对：先精确匹配，再词边界前缀匹配（视频带发布组/分辨率标签而字幕被重命名干净的场景）
   for (const v of videos) {
-    const key = pairingKey(v.name)
-    if (subMap.has(key) && !consumedKeys.has(key)) take(v, key)
-  }
-  for (const v of videos) {
-    if (matchedVideos.has(v.path)) continue
-    const key = pairingKey(v.name)
-    let best: string | null = null
-    let bestDiff = Infinity
-    for (const k of subMap.keys()) {
-      if (consumedKeys.has(k)) continue
-      if (!isTokenPrefix(key, k) && !isTokenPrefix(k, key)) continue
-      const diff = Math.abs(k.length - key.length)
-      if (diff < bestDiff) {
-        bestDiff = diff
-        best = k
-      }
+    const s = subAssign.byVideo.get(v.path) || []
+    const a = audioAssign.byVideo.get(v.path) || []
+    if (s.length || a.length) {
+      rows.push({ video: v, subs: s, audios: a, outName: defaultOutputFor(v.path, suffix).name })
+    } else {
+      unmatchedVideos.push(v)
     }
-    if (best) take(v, best)
-    else unmatchedVideos.push(v)
   }
   rows.sort((a, b) => a.video.path.localeCompare(b.video.path))
-  const unmatchedSubs = usableSubs.filter((s) => !consumedKeys.has(pairingKey(s.name)))
-  return { rows, unmatchedVideos, unmatchedSubs }
+  const unmatchedSubs = usableSubs.filter((s) => !subAssign.consumed.has(pairingKey(s.name)))
+  const unmatchedAudios = audios.filter((a) => !audioAssign.consumed.has(pairingKey(a.name)))
+  return { rows, unmatchedVideos, unmatchedSubs, unmatchedAudios }
 }
 
 // ---------- mkvmerge 参数 ----------
@@ -240,13 +293,16 @@ export interface SubMuxOptions {
   dropEmbeddedSubs: boolean
   segTitle?: string
   subs: SubRow[]
+  audios?: AudioRow[]
+  dropEmbeddedAudio?: boolean
 }
 
-// 拼装内封字幕的 mkvmerge 参数（不含工具名）。轨道选项作用于其后的文件；外挂字幕都是单轨文件，TID=0。
+// 拼装内封字幕/音频的 mkvmerge 参数（不含工具名）。轨道选项作用于其后的文件；外挂字幕/音频都是单轨文件，TID=0。
 export function buildSubMuxArgv(o: SubMuxOptions): string[] {
   const args: string[] = ['--output', o.outPath]
   if (o.segTitle) args.push('--title', o.segTitle)
   if (o.dropEmbeddedSubs) args.push('--no-subtitles')
+  if (o.dropEmbeddedAudio) args.push('--no-audio')
   args.push(o.videoPath)
   for (const s of o.subs) {
     if (s.charset) args.push('--sub-charset', `0:${s.charset}`)
@@ -255,6 +311,13 @@ export function buildSubMuxArgv(o: SubMuxOptions): string[] {
     args.push('--default-track-flag', `0:${s.isDefault ? 1 : 0}`)
     if (s.isForced) args.push('--forced-display-flag', '0:1')
     args.push(s.path)
+  }
+  for (const a of o.audios || []) {
+    if (a.lang) args.push('--language', `0:${a.lang}`)
+    if (a.trackName) args.push('--track-name', `0:${a.trackName}`)
+    args.push('--default-track-flag', `0:${a.isDefault ? 1 : 0}`)
+    if (a.isCommentary) args.push('--commentary-flag', '0:1')
+    args.push(a.path)
   }
   return args
 }

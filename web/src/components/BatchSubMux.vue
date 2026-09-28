@@ -10,7 +10,8 @@ import { api, type FileEntry } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
 import {
   buildSubMuxArgv, defaultOutputFor, guessLanguage, joinPath, pairVideos,
-  SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS, SUB_CHARSETS, SUB_LANG_PRESETS, extOf, type SubRow,
+  SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS, AUDIO_EXTENSIONS, SUB_CHARSETS, SUB_LANG_PRESETS,
+  extOf, type SubRow, type AudioRow,
 } from '../subtitles'
 
 const { t } = useI18n()
@@ -21,24 +22,36 @@ const subDir = ref('')
 const outDir = ref('')
 const outSuffix = ref('.subs')
 const dropEmbedded = ref(false)
+const dropEmbeddedAudio = ref(false)
 
 interface ScanRow {
   video: FileEntry
   subs: SubRow[]
+  audios: AudioRow[]
   include: boolean
 }
 const rows = ref<ScanRow[]>([])
 const unmatchedVideos = ref<FileEntry[]>([])
 const unmatchedSubs = ref<FileEntry[]>([])
+const unmatchedAudios = ref<FileEntry[]>([])
 const scanning = ref(false)
 const submitting = ref(false)
 const scanned = ref(false)
 
 const browser = ref(false)
-let browserTarget: 'videoDir' | 'subDir' | 'outDir' | null = null
+// dir 目标（选目录）或 addFiles 目标（给某一行多选补充外挂文件）
+let browserTarget: 'videoDir' | 'subDir' | 'outDir' | 'addFiles' | null = null
+let addFilesRow: ScanRow | null = null
 
-function openBrowser(target: typeof browserTarget) {
+function openBrowser(target: 'videoDir' | 'subDir' | 'outDir') {
   browserTarget = target
+  addFilesRow = null
+  browser.value = true
+}
+
+function openAddFiles(row: ScanRow) {
+  browserTarget = 'addFiles'
+  addFilesRow = row
   browser.value = true
 }
 
@@ -50,6 +63,13 @@ function onBrowserSelect(p: string) {
   else if (target === 'outDir') outDir.value = p
 }
 
+function onBrowserSelectMulti(paths: string[]) {
+  const row = addFilesRow
+  browserTarget = null
+  addFilesRow = null
+  if (row) addFilesToRow(row, paths)
+}
+
 function outNameFor(videoPath: string) {
   return defaultOutputFor(videoPath, outSuffix.value).name
 }
@@ -59,18 +79,42 @@ function rowOutDir(videoPath: string) {
 }
 
 // 扫描结果即编辑态：语言/轨道名按文件名猜（猜不出为 und，可手动改），字符集由后端检测后写回
+function makeSubRow(name: string, path: string): SubRow {
+  const g = guessLanguage(name)
+  return {
+    path,
+    fileName: name,
+    lang: g?.lang || 'und',
+    trackName: g?.name || '',
+    isDefault: false,
+    isForced: false,
+    charset: '',
+  }
+}
 function toSubRows(subs: FileEntry[]): SubRow[] {
   return subs.map((s, i) => {
-    const g = guessLanguage(s.name)
-    return {
-      path: s.path,
-      fileName: s.name,
-      lang: g?.lang || 'und',
-      trackName: g?.name || '',
-      isDefault: i === 0, // 组内已按 简>繁>英>其他 排序，第一条做默认
-      isForced: false,
-      charset: '',
-    }
+    const r = makeSubRow(s.name, s.path)
+    r.isDefault = i === 0 // 组内已按 简>繁>英>其他 排序，第一条做默认
+    return r
+  })
+}
+
+function makeAudioRow(name: string, path: string): AudioRow {
+  const g = guessLanguage(name)
+  return {
+    path,
+    fileName: name,
+    lang: g?.lang || 'und',
+    trackName: g?.name || '',
+    isDefault: false,
+    isCommentary: false,
+  }
+}
+function toAudioRows(audios: FileEntry[]): AudioRow[] {
+  return audios.map((a, i) => {
+    const r = makeAudioRow(a.name, a.path)
+    r.isDefault = i === 0
+    return r
   })
 }
 
@@ -84,9 +128,53 @@ function setDefault(group: SubRow[], row: SubRow, v: boolean) {
   if (v) group.forEach((s) => (s.isDefault = s === row))
   else row.isDefault = false
 }
+function setAudioDefault(group: AudioRow[], row: AudioRow, v: boolean) {
+  if (v) group.forEach((a) => (a.isDefault = a === row))
+  else row.isDefault = false
+}
+
+// 批量字符集检测：hint 取自文件名语言猜测，结果写回各行；失败则不指定
+async function detectCharsetsFor(subs: SubRow[]) {
+  if (!subs.length) return
+  const items = subs.map((s) => ({ path: s.path, hint: guessLanguage(s.fileName)?.hint || '' }))
+  try {
+    const { results } = await api.detectCharsets(items)
+    for (const s of subs) {
+      const cs = results[s.path]
+      if (cs) s.charset = cs
+    }
+  } catch {
+    /* 检测失败则不指定字符集 */
+  }
+}
+
+// 手动多选补充：按扩展名归类为字幕/音频，去重后追加到该行
+function addFilesToRow(row: ScanRow, paths: string[]) {
+  const nameOf = (p: string) => p.split(/[\\/]/).pop() || p
+  const existSub = new Set(row.subs.map((s) => s.path))
+  const existAudio = new Set(row.audios.map((a) => a.path))
+  const freshSubPaths: string[] = []
+  for (const p of paths) {
+    const ext = extOf(nameOf(p))
+    if (SUBTITLE_EXTENSIONS.has(ext) && !existSub.has(p)) {
+      row.subs.push(makeSubRow(nameOf(p), p))
+      freshSubPaths.push(p)
+    } else if (AUDIO_EXTENSIONS.has(ext) && !existAudio.has(p)) {
+      row.audios.push(makeAudioRow(nameOf(p), p))
+    }
+  }
+  if (row.subs.length && !row.subs.some((s) => s.isDefault)) row.subs[0].isDefault = true
+  if (row.audios.length && !row.audios.some((a) => a.isDefault)) row.audios[0].isDefault = true
+  // 字符集检测须作用于 rows 里的响应式代理对象，改原始对象不会触发更新
+  const fresh = new Set(freshSubPaths)
+  if (fresh.size) detectCharsetsFor(row.subs.filter((s) => fresh.has(s.path)))
+}
 
 const undetectedCount = computed(() =>
-  rows.value.reduce((n, r) => n + r.subs.filter((s) => s.lang === 'und').length, 0)
+  rows.value.reduce(
+    (n, r) => n + r.subs.filter((s) => s.lang === 'und').length + r.audios.filter((a) => a.lang === 'und').length,
+    0
+  )
 )
 
 async function scan() {
@@ -102,26 +190,21 @@ async function scan() {
     ])
     const videos = vres.entries.filter((e) => !e.isDir && VIDEO_EXTENSIONS.has(extOf(e.name)))
     const subFiles = sres.entries.filter((e) => !e.isDir && SUBTITLE_EXTENSIONS.has(extOf(e.name)))
-    const pr = pairVideos(videos, subFiles, outSuffix.value)
-    rows.value = pr.rows.map((r) => ({ video: r.video, subs: toSubRows(r.subs), include: true }))
+    const audioFiles = sres.entries.filter((e) => !e.isDir && AUDIO_EXTENSIONS.has(extOf(e.name)))
+    const pr = pairVideos(videos, subFiles, outSuffix.value, audioFiles)
+    rows.value = pr.rows.map((r) => ({
+      video: r.video,
+      subs: toSubRows(r.subs),
+      audios: toAudioRows(r.audios),
+      include: true,
+    }))
     unmatchedVideos.value = pr.unmatchedVideos
     unmatchedSubs.value = pr.unmatchedSubs
+    unmatchedAudios.value = pr.unmatchedAudios
     scanned.value = true
 
     // 批量字符集检测（全部字幕一次性发给后端），结果直接写回各行，行内可手动覆盖
-    const allSubs = rows.value.flatMap((r) => r.subs)
-    if (allSubs.length) {
-      const items = allSubs.map((s) => ({ path: s.path, hint: guessLanguage(s.fileName)?.hint || '' }))
-      try {
-        const { results } = await api.detectCharsets(items)
-        for (const s of allSubs) {
-          const cs = results[s.path]
-          if (cs) s.charset = cs
-        }
-      } catch {
-        /* 检测失败则不指定字符集 */
-      }
-    }
+    await detectCharsetsFor(rows.value.flatMap((r) => r.subs))
   } catch (e: any) {
     message.error(e.message)
   } finally {
@@ -141,7 +224,11 @@ async function submit() {
   for (const r of included) {
     const outPath = joinPath(rowOutDir(r.video.path), outNameFor(r.video.path))
     // 输出与某个输入同路径（如后缀被清空且视频本身是 mkv），跳过以免覆盖源文件
-    if (outPath === r.video.path || r.subs.some((s) => s.path === outPath)) {
+    if (
+      outPath === r.video.path ||
+      r.subs.some((s) => s.path === outPath) ||
+      r.audios.some((a) => a.path === outPath)
+    ) {
       failed++
       continue
     }
@@ -149,7 +236,9 @@ async function submit() {
       outPath,
       videoPath: r.video.path,
       dropEmbeddedSubs: dropEmbedded.value,
+      dropEmbeddedAudio: dropEmbeddedAudio.value,
       subs: r.subs,
+      audios: r.audios,
     })
     try {
       await api.createJob({ name: outNameFor(r.video.path), tool: 'mkvmerge', argv })
@@ -174,6 +263,7 @@ onMounted(() => {
       outDir.value = draft.outDir || ''
       outSuffix.value = draft.outSuffix || '.subs'
       dropEmbedded.value = !!draft.dropEmbedded
+      dropEmbeddedAudio.value = !!draft.dropEmbeddedAudio
     }
   } catch {
     /* ignore */
@@ -189,10 +279,11 @@ function saveDraft() {
       outDir: outDir.value,
       outSuffix: outSuffix.value,
       dropEmbedded: dropEmbedded.value,
+      dropEmbeddedAudio: dropEmbeddedAudio.value,
     })
   )
 }
-watch([videoDir, subDir, outDir, outSuffix, dropEmbedded], saveDraft)
+watch([videoDir, subDir, outDir, outSuffix, dropEmbedded, dropEmbeddedAudio], saveDraft)
 
 // 一键清空：回到初始状态并清除本地草稿
 function clearAll() {
@@ -201,9 +292,11 @@ function clearAll() {
   outDir.value = ''
   outSuffix.value = '.subs'
   dropEmbedded.value = false
+  dropEmbeddedAudio.value = false
   rows.value = []
   unmatchedVideos.value = []
   unmatchedSubs.value = []
+  unmatchedAudios.value = []
   scanned.value = false
   localStorage.removeItem(DRAFT_KEY)
 }
@@ -256,7 +349,10 @@ function clearAll() {
         </NGi>
         <NGi :span="2">
           <div class="field-label">&nbsp;</div>
-          <NCheckbox v-model:checked="dropEmbedded">{{ $t('qsub.dropEmbedded') }}</NCheckbox>
+          <NSpace>
+            <NCheckbox v-model:checked="dropEmbedded">{{ $t('qsub.dropEmbedded') }}</NCheckbox>
+            <NCheckbox v-model:checked="dropEmbeddedAudio">{{ $t('bsub.dropEmbeddedAudio') }}</NCheckbox>
+          </NSpace>
         </NGi>
       </NGrid>
       <div style="margin-top: 8px; font-size: 12px; opacity: 0.55">{{ $t('bsub.suffixHint') }}</div>
@@ -281,8 +377,8 @@ function clearAll() {
             <thead>
               <tr>
                 <th style="width: 50px">{{ $t('bsub.colInclude') }}</th>
-                <th>{{ $t('bsub.colVideo') }}</th>
-                <th style="width: 45%">{{ $t('bsub.colSubs') }}</th>
+                <th style="width: 25%">{{ $t('bsub.colVideo') }}</th>
+                <th style="width: 50%">{{ $t('bsub.colTracks') }}</th>
                 <th style="width: 25%">{{ $t('bsub.colOut') }}</th>
               </tr>
             </thead>
@@ -291,6 +387,7 @@ function clearAll() {
                 <td><NCheckbox v-model:checked="r.include" size="small" /></td>
                 <td style="word-break: break-all; font-size: 12px">{{ r.video.path }}</td>
                 <td>
+                  <div v-if="r.subs.length" class="track-sec">{{ $t('bsub.secSubs') }}</div>
                   <div v-for="s in r.subs" :key="s.path" class="sub-edit">
                     <div class="sub-file" :title="s.path">{{ s.fileName }}</div>
                     <NGrid :cols="4" :x-gap="8" :y-gap="8">
@@ -332,6 +429,40 @@ function clearAll() {
                       </NGi>
                     </NGrid>
                   </div>
+
+                  <div v-if="r.audios.length" class="track-sec">{{ $t('bsub.secAudio') }}</div>
+                  <div v-for="a in r.audios" :key="a.path" class="sub-edit">
+                    <div class="sub-file" :title="a.path">{{ a.fileName }}</div>
+                    <NGrid :cols="4" :x-gap="8" :y-gap="8">
+                      <NGi>
+                        <div class="field-label">{{ $t('qsub.lang') }}</div>
+                        <NSelect
+                          v-model:value="a.lang"
+                          size="small"
+                          tag
+                          filterable
+                          :status="a.lang === 'und' ? 'warning' : undefined"
+                          :options="langOptions(a.lang)"
+                        />
+                      </NGi>
+                      <NGi>
+                        <div class="field-label">{{ $t('qsub.def') }}</div>
+                        <NSwitch :value="a.isDefault" size="small" @update:value="(v: boolean) => setAudioDefault(r.audios, a, v)" />
+                      </NGi>
+                      <NGi>
+                        <div class="field-label">{{ $t('muxer.trackCommentary') }}</div>
+                        <NSwitch v-model:value="a.isCommentary" size="small" />
+                      </NGi>
+                      <NGi :span="4">
+                        <div class="field-label">{{ $t('qsub.trackName') }}</div>
+                        <NInput v-model:value="a.trackName" size="small" />
+                      </NGi>
+                    </NGrid>
+                  </div>
+
+                  <NButton size="tiny" dashed style="margin-top: 8px" @click="openAddFiles(r)">
+                    {{ $t('bsub.addFiles') }}
+                  </NButton>
                 </td>
                 <td style="font-size: 12px; opacity: 0.75">
                   {{ joinPath(rowOutDir(r.video.path), outNameFor(r.video.path)) }}
@@ -343,6 +474,7 @@ function clearAll() {
         <div v-if="rows.length" style="margin-top: 8px; font-size: 12px; opacity: 0.6">
           <div v-if="unmatchedVideos.length">{{ $t('bsub.unmatchedVideos', { n: unmatchedVideos.length }) }}：{{ unmatchedVideos.map((v) => v.name).join('、') }}</div>
           <div v-if="unmatchedSubs.length">{{ $t('bsub.unmatchedSubs', { n: unmatchedSubs.length }) }}：{{ unmatchedSubs.map((s) => s.name).join('、') }}</div>
+          <div v-if="unmatchedAudios.length">{{ $t('bsub.unmatchedAudios', { n: unmatchedAudios.length }) }}：{{ unmatchedAudios.map((a) => a.name).join('、') }}</div>
         </div>
       </NCard>
     </template>
@@ -351,9 +483,11 @@ function clearAll() {
 
     <FileBrowser
       v-model:show="browser"
-      mode="dir"
+      :mode="browserTarget === 'addFiles' ? 'file' : 'dir'"
+      :multi="browserTarget === 'addFiles'"
       filter="media"
       @select="onBrowserSelect"
+      @select-multi="onBrowserSelectMulti"
     />
   </NSpace>
 </template>
@@ -375,5 +509,11 @@ function clearAll() {
   font-size: 12px;
   word-break: break-all;
   opacity: 0.85;
+}
+.track-sec {
+  margin: 4px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.6;
 }
 </style>
