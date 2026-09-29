@@ -190,7 +190,10 @@ function onVideoChange(r: RenameRow, v: string | null) {
 }
 
 function onNameInput(r: RenameRow, v: string) {
-  r.newName = v
+  // textarea 模式下回车会产生换行，文件名不允许——直接剥掉（值没变就不算手改）
+  const clean = v.replace(/[\r\n]+/g, '')
+  if (clean === r.newName) return
+  r.newName = clean
   r.nameEdited = true
   touch(r)
 }
@@ -500,12 +503,14 @@ watch(moveToVideo, rederiveAuto)
                 {{ r.sub.name }}
                 <span v-if="r.companionSub" style="opacity: 0.6">（{{ $t('srn.withSub') }}）</span>
               </td>
-              <td>
+              <td class="video-cell">
                 <NSelect
+                  class="video-select"
                   :value="r.videoPath || null"
                   size="small"
                   filterable
                   clearable
+                  :consistent-menu-width="false"
                   :placeholder="$t('srn.pickVideo')"
                   :options="videoOptions"
                   @update:value="(v: string | null) => onVideoChange(r, v)"
@@ -513,8 +518,11 @@ watch(moveToVideo, rederiveAuto)
               </td>
               <td>
                 <NInput
+                  class="newname-input"
+                  type="textarea"
                   :value="r.newName"
                   size="small"
+                  :autosize="{ minRows: 1, maxRows: 4 }"
                   :placeholder="$t('srn.namePlaceholder')"
                   @update:value="(v: string) => onNameInput(r, v)"
                 />
@@ -563,6 +571,34 @@ watch(moveToVideo, rederiveAuto)
   margin-top: 4px;
   font-size: 11px;
   opacity: 0.75;
+  word-break: break-all;
+}
+/* 目标视频列的长文件名完整显示：选中值覆盖层由 absolute 改回流，换行后撑高选择框；
+   filterable 的输入框转为绝对定位铺满（下拉菜单在 body 下，样式见下方非 scoped 块） */
+.video-cell :deep(.n-base-selection),
+.video-cell :deep(.n-base-selection-label) {
+  height: auto;
+  min-height: var(--n-height);
+}
+.video-cell :deep(.n-base-selection-overlay) {
+  position: static;
+  white-space: normal;
+}
+.video-cell :deep(.n-base-selection-overlay__wrapper),
+.video-cell :deep(.n-base-selection-label__render-label) {
+  white-space: normal;
+  word-break: break-all;
+  overflow: visible;
+  text-overflow: clip;
+}
+.video-cell :deep(input.n-base-selection-input) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+/* 新文件名 autosize textarea：长文件名换行完整显示 */
+.newname-input :deep(textarea) {
   word-break: break-all;
 }
 </style>
