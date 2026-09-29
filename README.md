@@ -3,7 +3,7 @@
 把 [MKVToolNix](https://mkvtoolnix.download/) 的全部核心能力装进飞牛 fnOS 的 Web 应用：
 **内封字幕（主用途）：快速内封（单视频+多字幕，语言/轨道名/字符集自动识别）与批量内封（整季目录自动配对成任务）**，
 字幕改名（批量把字幕改名为匹配视频的文件名，可选追加 sc/tc/jpsc 等语言后缀，配对出错可手动换绑或改新名），
-外加完整混流（mkvmerge）、信息查看、轨道/附件/章节提取（mkvextract）、免重混流的属性编辑（mkvpropedit）、章节编辑器、任务队列与实时进度。
+外加完整混流（mkvmerge）、信息查看、轨道/附件/章节提取（mkvextract，支持批量多选，字幕按格式自动定后缀）、免重混流的属性编辑（mkvpropedit）、章节编辑器、任务队列与实时进度。
 前端 Vue 3 + Naive UI（深/浅色主题、中英双语），后端 Node.js 22，底层全部调用官方命令行工具（未修改、原样打包）。
 
 ## 安装
@@ -26,8 +26,7 @@ fnOS 应用中心「手动安装」导入。要求 fnOS ≥ 1.1.3100，且已安
 
 ## 本地构建（开发机）
 
-1. 安装依赖：Node.js ≥ 22（本机已验证 22.19）、npm；解包 AppImage 需要 7-Zip（脚本会自动找
-   `PATH` → `E:\A_project\7-Zip-Zstandard` → `C:\Program Files\7-Zip`）。
+1. 安装依赖：Node.js ≥ 22（本机已验证 22.19）、npm；解包 AppImage 需要 7-Zip。
 2. 下载打包工具（约 4MB）：
 
    ```powershell

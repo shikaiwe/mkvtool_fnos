@@ -1,146 +1,100 @@
 <script setup lang="ts">
-// 提取页：mkvextract 全模式
-import { ref, computed, onMounted } from 'vue'
+// 提取页：mkvextract 全模式，支持批量添加源文件（每个文件一个任务）。
+// 输出目录留空 = 各源文件所在目录；设置页默认输出目录优先。
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NCard, NSpace, NButton, NInput, NCheckbox, NTag, NAlert, NTable, NInputNumber, NPopconfirm, useMessage,
+  NCard, NSpace, NButton, NInput, NTag, NAlert, NCollapse, NCollapseItem, NPopconfirm, useMessage,
 } from 'naive-ui'
-import { api, fmtSize, type Identification } from '../api'
+import { api } from '../api'
 import FileBrowser from '../components/FileBrowser.vue'
+import ExtractFileCard from '../components/ExtractFileCard.vue'
+import { baseOf, buildArgv, defaultExt, makeItem, type ExtractItem } from '../extract'
 
 const { t } = useI18n()
 const message = useMessage()
 
-const src = ref('')
+const items = ref<ExtractItem[]>([])
 const outDir = ref('')
-const ident = ref<Identification | null>(null)
-const identifying = ref(false)
-
-// 轨道提取
-const trackSel = ref<Record<number, boolean>>({})
-const trackOut = ref<Record<number, string>>({})
-// 附件提取
-const attachSel = ref<Record<number, boolean>>({})
-// 章节与文本类
-const wantChapters = ref(false)
-const chaptersSimple = ref(false)
-const wantTags = ref(false)
-const wantCuesheet = ref(false)
-const wantCues = ref(false)
-const tsSel = ref<Record<number, boolean>>({})
 
 const browser = ref(false)
-const browserMode = ref<'file' | 'dir'>('file')
 const browserFor = ref<'src' | 'outDir'>('src')
 
-const CODEC_EXT: [RegExp, string][] = [
-  [/aac/i, 'aac'],
-  [/mp3|mpegh/i, 'mp3'],
-  [/flac/i, 'flac'],
-  [/opus/i, 'opus'],
-  [/vorbis/i, 'ogg'],
-  [/ac-?3|e-?ac-?3/i, 'ac3'],
-  [/dts/i, 'dts'],
-  [/truehd|thd/i, 'thd'],
-  [/pcm/i, 'wav'],
-  [/avc|h\.?264/i, 'h264'],
-  [/hevc|h\.?265/i, 'hevc'],
-  [/vp8|vp9|av1/i, 'ivf'],
-  [/mpeg-?1|mpeg-?2/i, 'm2v'],
-  [/subrip|srt/i, 'srt'],
-  [/ass|ssa/i, 'ass'],
-  [/pgs|hdmv/i, 'sup'],
-  [/vobsub|subrip? bitmap/i, 'sub'],
-  [/webvtt/i, 'vtt'],
-  [/utf-?8|txt/i, 'txt'],
-]
-
-function defaultExt(codec: string, type: string) {
-  for (const [re, ext] of CODEC_EXT) if (re.test(codec)) return ext
-  return type === 'subtitles' ? 'sub' : type === 'video' ? 'mkv' : 'bin'
-}
-
-function openBrowser(mode: 'file' | 'dir', which: 'src' | 'outDir') {
-  browserMode.value = mode
+function openBrowser(which: 'src' | 'outDir') {
   browserFor.value = which
   browser.value = true
 }
 
-async function onBrowserSelect(p: string) {
-  if (browserFor.value === 'outDir') {
-    outDir.value = p
-    return
-  }
-  src.value = p
-  ident.value = null
-  trackSel.value = {}
-  trackOut.value = {}
-  attachSel.value = {}
-  tsSel.value = {}
-  identifying.value = true
-  try {
-    ident.value = await api.identify(p)
-    const base = p.split(/[\\/]/).pop()!.replace(/\.[^.]+$/, '')
-    for (const tr of ident.value?.tracks || []) {
-      trackSel.value[tr.id] = false
-      tsSel.value[tr.id] = false
-      trackOut.value[tr.id] = `${base}.track${tr.id}.${defaultExt(tr.codec, tr.type)}`
-    }
-    for (const a of ident.value?.attachments || []) attachSel.value[a.id] = false
-  } catch (e: any) {
-    message.error(e.message)
-  } finally {
-    identifying.value = false
-  }
+function onBrowserSelect(p: string) {
+  if (browserFor.value === 'outDir') outDir.value = p
 }
 
-function outPath(name: string) {
-  return (outDir.value.replace(/[\\/]+$/, '') + '/' + name).replace(/^\/+/, '/')
+function onBrowserSelectMulti(paths: string[]) {
+  addFiles(paths)
 }
 
-const argv = computed<string[] | null>(() => {
-  if (!src.value || !outDir.value) return null
-  // 现行参数序：源文件在最前，其后依次为各模式与提取规格（mkvextract 官方文档用法）
-  const args: string[] = [src.value]
-  const tracks = (ident.value?.tracks || []).filter((tr) => trackSel.value[tr.id])
-  if (tracks.length) {
-    args.push('tracks')
-    for (const tr of tracks) args.push(`${tr.id}:${outPath(trackOut.value[tr.id] || `track${tr.id}.bin`)}`)
-  }
-  const ts = (ident.value?.tracks || []).filter((tr) => tsSel.value[tr.id])
-  if (ts.length) {
-    args.push('timestamps_v2')
-    for (const tr of ts) args.push(`${tr.id}:${outPath(`timestamps_${tr.id}.txt`)}`)
-  }
-  const atts = (ident.value?.attachments || []).filter((a) => attachSel.value[a.id])
-  if (atts.length) {
-    args.push('attachments')
-    for (const a of atts) args.push(`${a.id}:${outPath(a.name || `attachment_${a.id}`)}`)
-  }
-  if (wantChapters.value) args.push('chapters', ...(chaptersSimple.value ? ['-s'] : []), outPath('chapters.xml'))
-  if (wantTags.value) args.push('tags', outPath('tags.xml'))
-  if (wantCuesheet.value) args.push('cuesheet', outPath('cuesheet.cue'))
-  if (wantCues.value) args.push('cues', outPath('cues.cue'))
-  return args.length > 1 ? args : null
-})
+async function addFiles(paths: string[]) {
+  const queue = paths
+    .filter((p) => !items.value.some((i) => i.path === p))
+    .map((p) => {
+      // 先包成 reactive 再入列：后续用局部引用改 status/ident 必须走代理，否则 UI 不更新
+      const it = reactive(makeItem(p))
+      items.value.push(it)
+      return it
+    })
+  // 识别并发限制在 3，一次添加大量文件时不打爆后端
+  let idx = 0
+  await Promise.all(
+    Array.from({ length: Math.min(3, queue.length) }, async () => {
+      while (idx < queue.length) {
+        const it = queue[idx++]
+        try {
+          it.ident = await api.identify(it.path)
+          const base = baseOf(it.path).replace(/\.[^.]+$/, '')
+          for (const tr of it.ident?.tracks || []) {
+            it.trackSel[tr.id] = false
+            it.tsSel[tr.id] = false
+            it.trackOut[tr.id] = `${base}.track${tr.id}.${defaultExt(tr)}`
+          }
+          for (const a of it.ident?.attachments || []) it.attachSel[a.id] = false
+          it.status = 'ready'
+        } catch (e: any) {
+          it.error = e.message
+          it.status = 'error'
+        }
+      }
+    })
+  )
+}
 
-const argvText = computed(() => (argv.value ? ['mkvextract', ...argv.value].join(' ') : ''))
+function removeItem(it: ExtractItem) {
+  items.value = items.value.filter((i) => i !== it)
+}
+
+const submittable = computed(() => items.value.filter((i) => buildArgv(i, outDir.value)))
+
+const submitLabel = computed(() =>
+  submittable.value.length ? t('extract.submitCount', { n: submittable.value.length }) : t('common.submit')
+)
 
 async function submit() {
-  if (!argv.value) {
+  if (!submittable.value.length) {
     message.warning(t('extract.pickSomething'))
     return
   }
-  try {
-    await api.createJob({
-      name: `extract ${src.value.split(/[\\/]/).pop()}`,
-      tool: 'mkvextract',
-      argv: argv.value,
-    })
-    message.success(t('extract.submitted'))
-  } catch (e: any) {
-    message.error(e.message)
+  let ok = 0
+  let fail = 0
+  for (const it of submittable.value) {
+    try {
+      await api.createJob({ name: `extract ${baseOf(it.path)}`, tool: 'mkvextract', argv: buildArgv(it, outDir.value)! })
+      ok++
+    } catch (e: any) {
+      fail++
+      message.error(`${baseOf(it.path)}: ${e.message}`)
+    }
   }
+  if (ok) message.success(t('extract.submittedCount', { n: ok }))
+  if (fail) message.error(t('extract.submitFailed', { n: fail }))
 }
 
 onMounted(async () => {
@@ -152,20 +106,10 @@ onMounted(async () => {
   }
 })
 
-// 一键清空：回到初始状态（源/输出目录/勾选全部重置）
+// 一键清空：回到初始状态（文件列表/输出目录全部重置）
 function clearAll() {
-  src.value = ''
+  items.value = []
   outDir.value = ''
-  ident.value = null
-  trackSel.value = {}
-  trackOut.value = {}
-  attachSel.value = {}
-  tsSel.value = {}
-  wantChapters.value = false
-  chaptersSimple.value = false
-  wantTags.value = false
-  wantCuesheet.value = false
-  wantCues.value = false
 }
 </script>
 
@@ -183,99 +127,50 @@ function clearAll() {
       <NSpace vertical size="small">
         <div style="display: flex; gap: 8px; align-items: center">
           <NTag size="small">{{ $t('extract.source') }}</NTag>
-          <NInput :value="src" readonly :placeholder="$t('info.noFile')" @click="openBrowser('file', 'src')">
-            <template #suffix>
-              <NButton quaternary size="tiny" @click.stop="openBrowser('file', 'src')">{{ $t('common.browse') }}</NButton>
-            </template>
-          </NInput>
+          <NButton size="small" @click="openBrowser('src')">{{ $t('extract.addFiles') }}</NButton>
           <NTag size="small">{{ $t('extract.outputDir') }}</NTag>
-          <NInput :value="outDir" readonly @click="openBrowser('dir', 'outDir')">
+          <NInput :value="outDir" readonly :placeholder="$t('extract.outDirHint')" @click="openBrowser('outDir')">
             <template #suffix>
-              <NButton quaternary size="tiny" @click.stop="openBrowser('dir', 'outDir')">{{ $t('common.browse') }}</NButton>
+              <NButton quaternary size="tiny" @click.stop="openBrowser('outDir')">{{ $t('common.browse') }}</NButton>
             </template>
           </NInput>
         </div>
+        <div style="font-size: 12px; opacity: 0.65">{{ $t('extract.outDirHint') }}</div>
       </NSpace>
     </NCard>
 
-    <NCard v-if="ident" :title="$t('extract.mode')">
+    <NCard v-if="items.length" :title="$t('extract.fileList')">
       <NSpace vertical size="large">
-        <div>
-          <b style="font-size: 13px">{{ $t('extract.tracks') }}</b>
-          <NTable size="small" :single-line="false" :bordered="false" style="margin-top: 6px">
-            <thead>
-              <tr>
-                <th style="width: 60px"></th>
-                <th style="width: 40px">ID</th>
-                <th style="width: 80px">{{ $t('info.type') }}</th>
-                <th style="width: 140px">{{ $t('info.codec') }}</th>
-                <th>{{ $t('extract.outName') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="tr in ident?.tracks" :key="'t' + tr.id">
-                <td><NCheckbox v-model:checked="trackSel[tr.id]" size="small" /></td>
-                <td>{{ tr.id }}</td>
-                <td><NTag size="tiny" :bordered="false">{{ tr.type }}</NTag></td>
-                <td style="font-size: 12px">{{ tr.codec }}</td>
-                <td>
-                  <NInput v-if="trackSel[tr.id]" v-model:value="trackOut[tr.id]" size="small" />
-                </td>
-              </tr>
-            </tbody>
-          </NTable>
-        </div>
-
-        <div v-if="(ident?.attachments || []).length">
-          <b style="font-size: 13px">{{ $t('extract.attachments') }}</b>
-          <NTable size="small" :single-line="false" :bordered="false" style="margin-top: 6px">
-            <thead>
-              <tr>
-                <th style="width: 60px"></th>
-                <th style="width: 40px">ID</th>
-                <th>{{ $t('common.fileName') }}</th>
-                <th style="width: 100px">{{ $t('common.size') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="a in ident?.attachments" :key="'a' + a.id">
-                <td><NCheckbox v-model:checked="attachSel[a.id]" size="small" /></td>
-                <td>{{ a.id }}</td>
-                <td>{{ a.name }}</td>
-                <td>{{ fmtSize(a.size) }}</td>
-              </tr>
-            </tbody>
-          </NTable>
-        </div>
-
-        <NSpace>
-          <NCheckbox v-model:checked="wantChapters">{{ $t('extract.chaptersMode') }}</NCheckbox>
-          <NCheckbox v-if="wantChapters" v-model:checked="chaptersSimple">{{ $t('extract.simpleChapters') }}</NCheckbox>
-          <NCheckbox v-model:checked="wantTags">{{ $t('extract.tags') }}</NCheckbox>
-          <NCheckbox v-model:checked="wantCuesheet">{{ $t('extract.cuesheet') }}</NCheckbox>
-          <NCheckbox v-model:checked="wantCues">{{ $t('extract.cues') }}</NCheckbox>
-        </NSpace>
-
-        <div>
-          <b style="font-size: 13px">{{ $t('extract.timestamps') }}</b>
-          <NSpace style="margin-top: 6px">
-            <NCheckbox
-              v-for="tr in ident?.tracks"
-              :key="'ts' + tr.id"
-              v-model:checked="tsSel[tr.id]"
-              size="small"
-            >#{{ tr.id }} {{ tr.type }}</NCheckbox>
-          </NSpace>
-        </div>
-
-        <NAlert v-if="argvText" type="info" :show-icon="false">
-          <code style="word-break: break-all; font-size: 12px">$ {{ argvText }}</code>
-        </NAlert>
-        <NButton type="primary" :disabled="!argv" @click="submit">{{ $t('common.submit') }}</NButton>
+        <NCollapse>
+          <NCollapseItem v-for="it in items" :key="it.path" :name="it.path">
+            <template #header>
+              <span :title="it.path" style="font-size: 13px; word-break: break-all">{{ baseOf(it.path) }}</span>
+            </template>
+            <template #header-extra>
+              <span style="display: inline-flex; gap: 6px; align-items: center" @click.stop>
+                <NTag v-if="it.status === 'identifying'" size="tiny" :bordered="false">{{ $t('extract.stIdentifying') }}</NTag>
+                <NTag v-else-if="it.status === 'error'" size="tiny" type="error" :bordered="false" :title="it.error">
+                  {{ $t('extract.stFailed') }}
+                </NTag>
+                <NButton quaternary type="error" size="tiny" @click.stop="removeItem(it)">{{ $t('common.remove') }}</NButton>
+              </span>
+            </template>
+            <NAlert v-if="it.status === 'error'" type="error" :show-icon="false">{{ it.error }}</NAlert>
+            <ExtractFileCard v-else-if="it.status === 'ready'" :item="it" :out-dir="outDir" />
+          </NCollapseItem>
+        </NCollapse>
+        <NButton type="primary" :disabled="!submittable.length" @click="submit">{{ submitLabel }}</NButton>
       </NSpace>
     </NCard>
-    <NAlert v-else-if="!identifying" type="info" :show-icon="false">{{ $t('info.noFile') }}</NAlert>
+    <NAlert v-else type="info" :show-icon="false">{{ $t('extract.emptyFiles') }}</NAlert>
 
-    <FileBrowser v-model:show="browser" :mode="browserMode" :filter="browserFor === 'src' ? 'media' : ''" @select="onBrowserSelect" />
+    <FileBrowser
+      v-model:show="browser"
+      :mode="browserFor === 'src' ? 'file' : 'dir'"
+      :filter="browserFor === 'src' ? 'media' : ''"
+      :multi="browserFor === 'src'"
+      @select="onBrowserSelect"
+      @select-multi="onBrowserSelectMulti"
+    />
   </NSpace>
 </template>
