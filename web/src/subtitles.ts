@@ -207,6 +207,87 @@ function isTokenPrefix(prefix: string, full: string): boolean {
   return /^[\s_-]/.test(rest)
 }
 
+// ---------- 模糊匹配（第三轮）----------
+// 发布组风格命名（[Group] Title [EP][Quality][Codec]...）里，视频与字幕常因发布组、质量、
+// 编码、额外描述词不同而「配对键」完全不同，前两轮（精确/前缀）都匹配不到。此轮改以
+// 「集数 + 标题核心词」为信号：集数一致（且共享 ≥1 个核心词）即配对；任一侧缺集数时要求
+// 共享 ≥2 个核心词，避免把同集数的不同作品误配到一起。规格/来源/编码/厂牌等噪声词会从
+// 核心词中剔除，让标题真正主导匹配（跨发布组、跨质量、跨编码的同一集也能配到一起）。
+
+// 低区分度噪声词：分辨率 / 画幅、视频编码、音频、来源、位深、厂牌修饰。
+// 同名词在不同发布组间高频出现，剔除后不会把「共享这些词」误判为同一作品。
+const META_TOKENS = new Set([
+  '240p', '360p', '480p', '540p', '576p', '720p', '810p', '816p', '1080p', '1440p', '2160p',
+  '480', '720', '1080', '1440', '2160', '4k', 'uhd', 'hd', 'fhd', 'xga', 'hqa', 'qfhd',
+  'x264', 'x265', 'hevc', 'h264', 'h265', 'avc', 'av1', 'vp9', 'vp8', 'divx', 'xvid', 'mpeg2', 'mpeg4',
+  'aac', 'ac3', 'eac3', 'flac', 'dts', 'dtshd', 'truehd', 'opus', 'mp3', 'vorbis', 'atmos', 'dolby', 'lpcm', 'wma',
+  'bdrip', 'brrip', 'blu', 'ray', 'bd', 'hdtv', 'hdrip', 'uhdrip', 'uhdbrip', 'webrip', 'webdl', 'web', 'dl', 'dvdrip', 'dvdr', 'hdcam', 'cam', 'remux', 'rip', 'hq', 'lq', 'fix', 'clean', 'recut', 'repack',
+  '10bit', '8bit', '10b', '8b',
+  'studio', 'studios', 'anime', 'anim', 'group', 'release', 'batch', 'complete', 'full', 'all', 'series', 'special', 'pack', 'season', 'episode', 'vol', 'volume', 'uncut', 'cut', 'limited', 'final', 'proper', 'popular', 'cinematic', 'ova', 'on', 'the', 'of', 'and', 'sub', 'subbed', 'dub', 'dubbed',
+])
+
+// zh-Hans / zh-Hant 被切词拆成 zh+hans 后，hans/hant 不在语言规则表内，单独剔除
+const LANG_ALIAS = new Set(['hans', 'hant'])
+
+// 归一化集数：把 01 / e01 / ep01 / s01e02 / part1 / 第1集 / 1话 等统一成数字，
+// 让不同写法的同一集可被识别为相同（视频 [01] 与字幕 E01 不因此失配）；识别不到返回 null
+export function episodeOf(name: string): number | null {
+  const ext = extOf(name)
+  const base = ext ? name.slice(0, name.length - ext.length - 1) : name
+  const tokens = base.split(/[._\- [\]()]+/).filter(Boolean).map((t) => t.toLowerCase())
+  const twoTokenMarker = /^(ep|episode|e|s)$/
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]
+    let m = t.match(/^第?(\d{1,3})[集话回話]$/)
+    if (m) return +m[1]
+    m = t.match(/^episode(\d{1,3})$/) || t.match(/^ep(\d{1,3})$/)
+    if (m) return +m[1]
+    m = t.match(/^e(\d{1,3})$/)
+    if (m) return +m[1]
+    m = t.match(/^s(\d{1,2})e(\d{1,3})$/)
+    if (m) return +m[2]
+    m = t.match(/^part(\d{1,3})$/)
+    if (m) return +m[1]
+    if (/^\d{1,3}$/.test(t)) return +t
+    if (i + 1 < tokens.length && twoTokenMarker.test(t) && /^\d{1,3}$/.test(tokens[i + 1])) return +tokens[i + 1]
+  }
+  return null
+}
+
+// 标题核心词：切词后剔除 语言标记 / 语言别名 / 规格噪声 / 纯数字 / 单个拉丁字母，
+// 剩下的（多为标题词、发布组、描述词）构成「核心词」集合，是模糊匹配的信号来源
+export function coreWords(name: string): Set<string> {
+  const ext = extOf(name)
+  const base = ext ? name.slice(0, name.length - ext.length - 1) : name
+  const set = new Set<string>()
+  for (const raw of base.split(/[._\- [\]()]+/).filter(Boolean)) {
+    const t = raw.toLowerCase()
+    if (matchLangToken(t)) continue
+    if (LANG_ALIAS.has(t)) continue
+    if (META_TOKENS.has(t)) continue
+    if (/^\d+$/.test(t)) continue
+    if (/^[a-z]$/.test(t)) continue
+    set.add(t)
+  }
+  return set
+}
+
+// 两个文件名的模糊相似度（0~1）：集数不同直接 0；集数一致要求共享 ≥1 核心词，
+// 缺集数要求共享 ≥2 核心词；共享越多分越高（用于在多个视频间择优）
+export function fuzzyPairScore(videoName: string, subName: string): number {
+  return fuzzyCoreScore(episodeOf(videoName), coreWords(videoName), episodeOf(subName), coreWords(subName))
+}
+
+function fuzzyCoreScore(ge: number | null, gw: Set<string>, ve: number | null, vw: Set<string>): number {
+  if (ge != null && ve != null && ge !== ve) return 0
+  let inter = 0
+  for (const w of gw) if (vw.has(w)) inter++
+  const cov = inter / (Math.min(gw.size, vw.size) || 1)
+  const need = ge != null && ve != null ? 1 : 2
+  if (inter < need) return 0
+  return 0.5 + 0.5 * cov
+}
+
 // 把外挂文件按配对键分组
 function groupByKey(files: FileEntry[]): Map<string, FileEntry[]> {
   const map = new Map<string, FileEntry[]>()
@@ -221,7 +302,9 @@ function groupByKey(files: FileEntry[]): Map<string, FileEntry[]> {
 
 // 把一批外挂文件组配到视频：
 // 1) 先精确 key 匹配；2) 再按视频 key 从长到短（最具体优先）遍历所有视频，
-// 吸纳所有未被占用、且与视频 key 互为词边界前缀的组（一个视频可收多组，修复"两个字幕只显示一个"）。
+// 吸纳所有未被占用、且与视频 key 互为词边界前缀的组（一个视频可收多组，修复"两个字幕只显示一个"）；
+// 3) 最后模糊匹配：以字幕组为中心，为每个未占用组挑选「集数+标题核心词」相似度最高的视频，
+// 处理发布组/质量/编码命名风格不同但同一集数的情况（一个视频仍可收多组）。
 function assignGroups(
   videos: FileEntry[],
   groups: Map<string, FileEntry[]>
@@ -246,6 +329,26 @@ function assignGroups(
       if (consumed.has(k)) continue
       if (isTokenPrefix(key, k) || isTokenPrefix(k, key)) add(v, k)
     }
+  }
+  // 第三轮（模糊）：发布组/质量/编码等命名风格不同、但同一集数的配对。
+  // 以字幕组为中心，为每个未占用组挑选相似度最高的视频（组内同键 → 取首文件的集数/核心词即可）。
+  const videoMeta = videos.map((v) => ({ v, ep: episodeOf(v.name), words: coreWords(v.name) }))
+  for (const k of [...groups.keys()]) {
+    if (consumed.has(k)) continue
+    const gfiles = groups.get(k)!
+    if (!gfiles.length) continue
+    const gEp = episodeOf(gfiles[0].name)
+    const gWords = coreWords(gfiles[0].name)
+    let best: FileEntry | null = null
+    let bestScore = 0
+    for (const vm of videoMeta) {
+      const sc = fuzzyCoreScore(gEp, gWords, vm.ep, vm.words)
+      if (sc > bestScore) {
+        bestScore = sc
+        best = vm.v
+      }
+    }
+    if (best && bestScore >= 0.5) add(best, k)
   }
   for (const list of byVideo.values()) {
     list.sort((a, b) => subSortScore(a.name) - subSortScore(b.name) || a.name.localeCompare(b.name))
